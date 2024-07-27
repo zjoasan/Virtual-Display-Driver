@@ -23,6 +23,14 @@ Environment:
 #include<tuple>
 #include<vector>
 #include <AdapterOption.h>
+#include <xmllite.h>
+#include <shlwapi.h>
+#include <atlbase.h>
+#include <iostream>
+
+
+#pragma comment(lib, "xmllite.lib")
+#pragma comment(lib, "shlwapi.lib")
 
 using namespace std;
 using namespace Microsoft::IndirectDisp;
@@ -58,6 +66,7 @@ struct
 vector<tuple<int, int, int>> monitorModes;
 vector< DISPLAYCONFIG_VIDEO_SIGNAL_INFO> s_KnownMonitorModes2;
 UINT numVirtualDisplays;
+wstring gpuname;
 
 struct IndirectDeviceContextWrapper
 {
@@ -135,6 +144,91 @@ void loadOptions(string filepath) {
 	}
 	monitorModes = res; return;
 }
+void loadSettings() {
+	// to complete this code I make sane defaults and remove load options and integrate it in laodsettings
+	//initpath(); Is comming in another PR for reg key
+	const wstring settingsname = L"C:\\IddSampleDriver\\vdd_settings.xml";
+	const std::wstring& filename = settingsname;
+	if (PathFileExistsW(filename.c_str())) {
+		CComPtr<IStream> pStream;
+		CComPtr<IXmlReader> pReader;
+		HRESULT hr = SHCreateStreamOnFileW(filename.c_str(), STGM_READ, &pStream);
+		if (FAILED(hr)) {
+			return; //Failed to create file stream.
+		}
+		hr = CreateXmlReader(__uuidof(IXmlReader), (void**)&pReader, NULL);
+		if (FAILED(hr)) {
+			return;//Failed to create XmlReader.
+		}
+		hr = pReader->SetInput(pStream);
+		if (FAILED(hr)) {
+			return;//Failed to set input stream.
+		}
+
+		XmlNodeType nodeType;
+		const WCHAR* pwszLocalName;
+		const WCHAR* pwszValue;
+		UINT cwchLocalName;
+		UINT cwchValue;
+		wstring currentElement;
+		wstring width, height, refreshRate;
+		vector<tuple<int, int, int>> res;
+		wstring gpuFriendlyName;
+		UINT monitorcount = 1;
+
+		while (S_OK == (hr = pReader->Read(&nodeType))) {
+			switch (nodeType) {
+			case XmlNodeType_Element:
+				hr = pReader->GetLocalName(&pwszLocalName, &cwchLocalName);
+				if (FAILED(hr)) {
+					return;
+				}
+				currentElement = wstring(pwszLocalName, cwchLocalName);
+				break;
+			case XmlNodeType_Text:
+				hr = pReader->GetValue(&pwszValue, &cwchValue);
+				if (FAILED(hr)) {
+					return;
+				}
+				if (currentElement == L"count") {
+					monitorcount = stoi(wstring(pwszValue, cwchValue));
+					if (monitorcount == 0) {
+						monitorcount = 1;
+					}
+				}
+				else if (currentElement == L"friendlyname") {
+					gpuFriendlyName = wstring(pwszValue, cwchValue);
+				}
+				else if (currentElement == L"width") {
+					width = wstring(pwszValue, cwchValue);
+					if (width.empty()) {
+						width = L"800";
+					}
+				}
+				else if (currentElement == L"height") {
+					height = wstring(pwszValue, cwchValue);
+					if (height.empty()) {
+						height = L"600";
+					}
+				}
+				else if (currentElement == L"refresh_rate") {
+					refreshRate = wstring(pwszValue, cwchValue);
+					if (refreshRate.empty()) {
+						refreshRate = L"30";
+					}
+					res.push_back(make_tuple(stoi(width), stoi(height), stoi(refreshRate)));
+				}
+				break;
+			}
+		}
+
+		numVirtualDisplays = monitorcount;
+		gpuname = gpuFriendlyName;
+		monitorModes = res;
+		return;
+	}
+	// More is comming here but i'm breaking it up multilpe PRS like trying to load options.tx then sand defaults
+}
 _Use_decl_annotations_
 NTSTATUS IddSampleDeviceAdd(WDFDRIVER Driver, PWDFDEVICE_INIT pDeviceInit)
 {
@@ -154,8 +248,18 @@ NTSTATUS IddSampleDeviceAdd(WDFDRIVER Driver, PWDFDEVICE_INIT pDeviceInit)
 	// If the driver wishes to handle custom IoDeviceControl requests, it's necessary to use this callback since IddCx
 	// redirects IoDeviceControl requests to an internal queue. This sample does not need this.
 	// IddConfig.EvtIddCxDeviceIoControl = IddSampleIoDeviceControl;
-	loadOptions("C:\\IddSampleDriver\\option.txt");
-	Options.Adapter.load("C:\\IddSampleDriver\\adapter.txt");
+	// loadOptions("C:\\IddSampleDriver\\option.txt");
+	
+	loadSettings();
+	if (gpuname.empty()) {
+		const wstring adaptername = L"C:\\IddSampleDriver\\adapter.txt";
+		Options.Adapter.load(adaptername.c_str());
+	}
+	else {
+		Options.Adapter.xmlprovide(gpuname);
+	}
+
+	// Options.Adapter.load("C:\\IddSampleDriver\\adapter.txt");
 
 	IddConfig.EvtIddCxAdapterInitFinished = IddSampleAdapterInitFinished;
 
