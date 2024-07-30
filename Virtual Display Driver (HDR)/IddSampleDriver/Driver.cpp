@@ -212,7 +212,7 @@ void loadSettings() {
 		monitorModes = res;
 		return;
 	}
-	const wstring optionsname = L"C:\\IddSampleDriver\\vdd_settings.xml";
+	const wstring optionsname = L"C:\\IddSampleDriver\\options.txt";
 	ifstream ifs(optionsname);
 	if (ifs.is_open()) {
 		string line;

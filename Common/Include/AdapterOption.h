@@ -105,7 +105,7 @@ namespace
             }
 
             sort(gpus.begin(), gpus.end(), CompareGPUs);
-
+			std::wstring target_name;
             target_name = gpus.front().name;
             adapterLuid = gpus.front().desc.AdapterLuid;
             hasTargetAdapter = true;
@@ -114,7 +114,8 @@ namespace
         }
 
         void xmlprovide(wstring xtarg) {
-            target_name = xtarg;
+            std::wstring target_name;
+			target_name = xtarg;
             ComPtr<IDXGIFactory1> factory{};
             if (!SUCCEEDED(CreateDXGIFactory1(IID_PPV_ARGS(&factory)))) {
                 return;
