@@ -129,21 +129,6 @@ vector<string> split(string& input, char delimiter)
 	return result;
 }
 
-void loadOptions(string filepath) {
-	ifstream ifs(filepath);
-
-	string line;
-	vector<tuple<int, int, int>> res;
-	getline(ifs, line);//num of displays
-	numVirtualDisplays = stoi(line);
-	while (getline(ifs, line)) {
-		vector<string> strvec = split(line, ',');
-		if (strvec.size() == 3 && strvec[0].substr(0, 1) != "#") {
-			res.push_back({ stoi(strvec[0]),stoi(strvec[1]),stoi(strvec[2]) });
-		}
-	}
-	monitorModes = res; return;
-}
 void loadSettings() {
 	// to complete this code I make sane defaults and remove load options and integrate it in laodsettings
 	//initpath(); Is comming in another PR for reg key
@@ -227,8 +212,59 @@ void loadSettings() {
 		monitorModes = res;
 		return;
 	}
-	// More is comming here but i'm breaking it up multilpe PRS like trying to load options.tx then sand defaults
+	const wstring optionsname = L"C:\\IddSampleDriver\\vdd_settings.xml";
+	ifstream ifs(optionsname);
+	if (ifs.is_open()) {
+		string line;
+		vector<tuple<int, int, int>> res;
+		getline(ifs, line);
+		numVirtualDisplays = stoi(line);
+		while (getline(ifs, line)) {
+			vector<string> strvec = split(line, ',');
+			if (strvec.size() == 3 && strvec[0].substr(0, 1) != "#") {
+				res.push_back({ stoi(strvec[0]),stoi(strvec[1]),stoi(strvec[2]) });
+			}
+		}
+		monitorModes = res; return;
+	}
+	else {
+		numVirtualDisplays = 1;
+		vector<tuple<int, int, int>> res = {
+			make_tuple(3840, 2160, 30),
+			make_tuple(3840, 2160, 60),
+			make_tuple(3840, 2160, 90),
+			make_tuple(3840, 2160, 120),
+			make_tuple(3840, 2160, 144),
+			make_tuple(2560, 1440, 30),
+			make_tuple(2560, 1440, 60),
+			make_tuple(2560, 1440, 90),
+			make_tuple(2560, 1440, 120),
+			make_tuple(2560, 1440, 144),
+			make_tuple(1920, 1080, 30),
+			make_tuple(1920, 1080, 60),
+			make_tuple(1920, 1080, 90),
+			make_tuple(1920, 1080, 120),
+			make_tuple(1920, 1080, 144),
+			make_tuple(1366, 768, 30),
+			make_tuple(1366, 768, 60),
+			make_tuple(1366, 768, 90),
+			make_tuple(1366, 768, 120),
+			make_tuple(1366, 768, 144),
+			make_tuple(1280, 720, 30),
+			make_tuple(1280, 720, 60),
+			make_tuple(1280, 720, 90),
+			make_tuple(1280, 720, 130),
+			make_tuple(1280, 720, 144),
+			make_tuple(800, 600, 30),
+			make_tuple(800, 600, 60),
+			make_tuple(800, 600, 90),
+			make_tuple(800, 600, 120),
+			make_tuple(800, 600, 144)
+		};
+		monitorModes = res; return;
+	}
 }
+
 _Use_decl_annotations_
 NTSTATUS IddSampleDeviceAdd(WDFDRIVER Driver, PWDFDEVICE_INIT pDeviceInit)
 {
