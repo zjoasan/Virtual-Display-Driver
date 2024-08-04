@@ -170,7 +170,7 @@ bool initpath() {
 void loadSettings() {
 	initpath();
 	const wstring settingsname = confpath + L"\\vdd_settings.xml";
-	const std::wstring& filename = settingsname;
+	const wstring& filename = settingsname;
 	if (PathFileExistsW(filename.c_str())) {
 		CComPtr<IStream> pStream;
 		CComPtr<IXmlReader> pReader;
