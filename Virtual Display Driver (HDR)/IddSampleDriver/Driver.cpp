@@ -267,36 +267,47 @@ void loadSettings() {
 	else {
 		numVirtualDisplays = 1;
 		vector<tuple<int, int, int>> res = {
-			make_tuple(3840, 2160, 30),
-			make_tuple(3840, 2160, 60),
-			make_tuple(3840, 2160, 90),
-			make_tuple(3840, 2160, 120),
-			make_tuple(3840, 2160, 144),
-			make_tuple(2560, 1440, 30),
-			make_tuple(2560, 1440, 60),
-			make_tuple(2560, 1440, 90),
-			make_tuple(2560, 1440, 120),
-			make_tuple(2560, 1440, 144),
-			make_tuple(1920, 1080, 30),
-			make_tuple(1920, 1080, 60),
-			make_tuple(1920, 1080, 90),
-			make_tuple(1920, 1080, 120),
-			make_tuple(1920, 1080, 144),
-			make_tuple(1366, 768, 30),
-			make_tuple(1366, 768, 60),
-			make_tuple(1366, 768, 90),
-			make_tuple(1366, 768, 120),
-			make_tuple(1366, 768, 144),
+			make_tuple(800, 600, 30),
+			make_tuple(800, 600, 60),
+			make_tuple(800, 600, 90),
+			make_tuple(800, 600, 120),
+			make_tuple(800, 600, 144),
+			make_tuple(800, 600, 165),
 			make_tuple(1280, 720, 30),
 			make_tuple(1280, 720, 60),
 			make_tuple(1280, 720, 90),
 			make_tuple(1280, 720, 130),
 			make_tuple(1280, 720, 144),
-			make_tuple(800, 600, 30),
-			make_tuple(800, 600, 60),
-			make_tuple(800, 600, 90),
-			make_tuple(800, 600, 120),
-			make_tuple(800, 600, 144)
+			make_tuple(1280, 720, 165),
+			make_tuple(1366, 768, 30),
+			make_tuple(1366, 768, 60),
+			make_tuple(1366, 768, 90),
+			make_tuple(1366, 768, 120),
+			make_tuple(1366, 768, 144),
+			make_tuple(1366, 768, 165),
+			make_tuple(1920, 1080, 30),
+			make_tuple(1920, 1080, 60),
+			make_tuple(1920, 1080, 90),
+			make_tuple(1920, 1080, 120),
+			make_tuple(1920, 1080, 144),
+			make_tuple(1920, 1080, 165),
+			make_tuple(2560, 1440, 30),
+			make_tuple(2560, 1440, 60),
+			make_tuple(2560, 1440, 90),
+			make_tuple(2560, 1440, 120),
+			make_tuple(2560, 1440, 144),
+			make_tuple(2560, 1440, 165),
+			make_tuple(3840, 2160, 30),
+			make_tuple(3840, 2160, 60),
+			make_tuple(3840, 2160, 90),
+			make_tuple(3840, 2160, 120),
+			make_tuple(3840, 2160, 144),
+			make_tuple(3840, 2160, 165)
+			
+
+
+
+
 		};
 		monitorModes = res; return;
 	}
