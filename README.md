@@ -46,85 +46,6 @@ remedy this, there is a a few tricks built into windows. So here goes:
 
 ## HDR Support Now Available for Windows 11 22H2+ 
 
-### Resolutions:
-
-    640 x 480
-    800 x 600
-    1024 x 768
-    1152 x 864
-    1280 x 720
-    1280 x 768
-    1280 x 800
-    1280 x 960
-    1280 x 1024
-    1360 x 768
-    1366 x 768
-    1440 x 900
-    1400 x 1050
-    1440 x 1440
-    1600 x 900
-    1600 x 1024
-    1680 x 1050
-    1920 x 1080
-    1920 x 1200
-    2560 x 1440
-    2560 x 1600
-    2732 x 2048
-    2880 x 1620
-    2880 x 1800
-    3008 x 1692
-    3840 x 2160
-    3840 x 2400
-    4096 x 2304
-    5120 x 2880
-    6016 x 3384
-    7680 x 4320
-
-### Just Added!
-
-    2732 x 2048
-    2560 x 1080
-    2880 x 1200
-    3440 x 1440
-    3840 x 1600
-    4320 x 1800
-    5120 x 2160
-    5760 x 2400
-    6880 x 2880
-    7680 x 3200
-    8640 x 3600
-    10240 x 432
-    2880 x 900
-    3840 x 1080
-    3840 x 1200
-    4320 x 1200
-    5120 x 1440
-    5120 x 1600
-    5760 x 1600
-    5760 x 1800
-    6400 x 1800
-    6480 x 1800
-    7680 x 2160
-    7680 x 2400
-    8640 x 2400
-    2388 x 1668
-    2400 x 1080
-    3456 x 2234
-    3456 x 2234
-
-### Refresh Rates:
-
-    30Hz
-    60Hz
-    75Hz
-    90Hz (Great for VR!)
-    120Hz
-    144Hz
-    165Hz
-    240Hz
-    480Hz
-    500Hz
-
 ### Videos
 
 [![thumbnail2023](https://github.com/itsmikethetech/Virtual-Display-Driver/assets/25166211/1a64c390-5d8a-420f-8bb9-4642349fc132)](https://youtu.be/nNWpbRUPkn4 "How to install a virtual display")
@@ -138,26 +59,6 @@ remedy this, there is a a few tricks built into windows. So here goes:
 ![image](https://github.com/itsmikethetech/Virtual-Display-Driver/assets/25166211/5cb8ce08-890f-4bc1-a1a6-34f22e103699)
 
 ![image](https://github.com/itsmikethetech/Virtual-Display-Driver/assets/25166211/02af86f2-b896-4265-9174-b17c9a1aeab7)
-
-
-## Background reading ##
-
-Start at the [Indirect Display Driver Model Overview](https://msdn.microsoft.com/en-us/library/windows/hardware/mt761968(v=vs.85).aspx) on MSDN.
-
-### Code structure ###
-
-The sample driver code is very simplistic and does nothing more than enumerate a single monitor when its device enters the D0/started power state. The IDD runs in Session 0 without any components running in the user session, so any driver instability will not affect the stability of the system as a whole. The IDD is a user-mode only model with no support for kernel-mode components. As such, the driver is able to use any DirectX APIs in order to process the desktop image. In fact, the IddCx provides the desktop image to encode in a DirectX surface.
-
-* `Direct3DDevice` class
-    * Contains logic for enumerating the correct render GPU from DXGI and creating a D3D device.
-    * Manages the lifetime of a DXGI factory and a D3D device created for the render GPU the system is using to render frames for your indirect display device's swap-chain.
-* `SwapChainProcessor` class
-    * Processes frames for a swap-chain assigned to the monitor object on a dedicated thread.
-    * The sample code does nothing with the frames, but demonstrates a correct processing loop with error handling and notifying the OS of frame completion.
-* `IndirectDeviceContext` class
-    * Processes device callbacks from IddCx.
-    * Manages the creation and arrival of the sample monitor.
-    * Handles swap-chain arrival and departure by creating a `Direct3DDevice` and handing it off to a `SwapChainProcessor`.
 
 ## License
 
