@@ -17,7 +17,7 @@ This project uses the official Windows Indirect Display Driver combined with the
 ## Installation
 
 1. Download the latest version from the releases page, and extract the contents to a folder.
-2. Copy the `\IddSampleDriver\` folder to `C:\IddSampleDriver\` before installing the driver **(important!)**.
+2. Copy the `\IddSampleDriver\` folder and its contents to `C:\IddSampleDriver\` before installing the driver **(important!)**.
 3. Right click and run the *.bat file **as an Administrator** to add the driver certificate as a trusted root certificate.
 4. Don't install the inf. Open device manager, click on any device, then click on the "Action" menu and click "Add Legacy Hardware".
 5. Select "Add hardware from a list (Advanced)" and then select Display adapters
