@@ -11,12 +11,13 @@ This project uses the official Windows Indirect Display Driver combined with the
 - [Windows 11 23H2+ (HDR)](https://github.com/itsmikethetech/Virtual-Display-Driver/releases/tag/23.12.2HDR)
 
 ## Download Beta
-- [Universal Driver (Windows 10/11)](https://github.com/itsmikethetech/Virtual-Display-Driver/releases/tag/24.8.6) - Adds XML configuration support, automatic/manual GPU selection, and more. Thanks to Bud and Jocke!
+- [Universal Driver (Windows 10/11)](https://github.com/itsmikethetech/Virtual-Display-Driver/releases/tag/24.9.11) - Adds XML configuration support, automatic/manual GPU selection, and more. Thanks to Bud and Jocke!
+
  
 ## Installation
 
 1. Download the latest version from the releases page, and extract the contents to a folder.
-2. Copy `option.txt` to `C:\IddSampleDriver\option.txt` before installing the driver **(important!)**.
+2. Copy the `\IddSampleDriver\` folder to `C:\IddSampleDriver\` before installing the driver **(important!)**.
 3. Right click and run the *.bat file **as an Administrator** to add the driver certificate as a trusted root certificate.
 4. Don't install the inf. Open device manager, click on any device, then click on the "Action" menu and click "Add Legacy Hardware".
 5. Select "Add hardware from a list (Advanced)" and then select Display adapters
