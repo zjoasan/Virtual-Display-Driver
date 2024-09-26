@@ -37,7 +37,6 @@ Environment:
 #include <iomanip>
 #include <cerrno>
 #include <locale>
-#include <codecvt>
 
 
 
@@ -126,7 +125,7 @@ bool LogEnabledQuery() {
 			dwBufferSize = sizeof(path);
 			lResult = RegQueryValueExW(hKey, L"LOGS", NULL, NULL, (LPBYTE)path, &dwBufferSize);
 			if (lResult == ERROR_SUCCESS) {
-				std::wstring logValue(path);
+				wstring logValue(path);
 				RegCloseKey(hKey);
 				if (logValue == L"true" || logValue == L"1") {
 					return true;
@@ -200,7 +199,7 @@ bool DebugLogEnabledQuery() {
 			dwBufferSize = sizeof(path);
 			lResult = RegQueryValueExW(hKey, L"DEBUGLOGS", NULL, NULL, (LPBYTE)path, &dwBufferSize);
 			if (lResult == ERROR_SUCCESS) {
-				std::wstring logValue(path);
+				wstring logValue(path);
 				RegCloseKey(hKey);
 				if (logValue == L"true" || logValue == L"1") {
 					return true;
@@ -253,6 +252,15 @@ bool DebugLogEnabledQuery() {
 	return xmlLoggingValue;
 }
 
+string WStringToString(const wstring& wstr) { //basically just a function for converting strings since codecvt is depricated in c++ 17
+	if (wstr.empty()) return "";
+
+	int size_needed = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), (int)wstr.size(), NULL, 0, NULL, NULL);
+	string str(size_needed, 0);
+	WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), (int)wstr.size(), &str[0], size_needed, NULL, NULL);
+	return str;
+}
+
 void vddlog(const char* type, const char* message) {
 	FILE* logFile;
 	logsEnabled = LogEnabledQuery();
@@ -294,15 +302,14 @@ void vddlog(const char* type, const char* message) {
 		return;  
 	}
 
-	wstring_convert<codecvt_utf8<wchar_t>> converter;
-	string narrow_logPath = converter.to_bytes(logPath);
+	string narrow_logPath = WStringToString(logPath); // Convert to narrow string
 	const char* mode = "a";
 	errno_t err = fopen_s(&logFile, narrow_logPath.c_str(), mode);
 	if (err == 0 && logFile != nullptr) {
 		stringstream ss;
 		ss << put_time(&tm_buf, "%Y-%m-%d %X");
 
-		std::string logType;
+		string logType;
 		switch (type[0]) {
 		case 'e':
 			logType = "ERROR";
@@ -407,11 +414,10 @@ void InitializeD3DDeviceAndLogGPU() {
 	wstring wdesc(desc.Description);
 	string utf8_desc;
 	try {
-		wstring_convert<codecvt_utf8<wchar_t>> converter;
-		utf8_desc = converter.to_bytes(wdesc);
+		utf8_desc = WStringToString(wdesc);
 	}
 	catch (const exception& e) {
-		vddlog("e", ("Retrieving D3D Device GPU: Conversion error: "s + e.what()).c_str());
+		vddlog("e", ("Retrieving D3D Device GPU: Conversion error: " + string(e.what())).c_str());
 		return;
 	}
 
@@ -437,7 +443,7 @@ extern "C" BOOL WINAPI DllMain(
 
 
 bool UpdateXmlToggleSetting(bool toggle, const wchar_t* variable) {
-	const std::wstring settingsname = confpath + L"\\vdd_settings.xml";
+	const wstring settingsname = confpath + L"\\vdd_settings.xml";
 	CComPtr<IStream> pFileStream;
 	HRESULT hr = SHCreateStreamOnFileEx(settingsname.c_str(), STGM_READWRITE, FILE_ATTRIBUTE_NORMAL, FALSE, nullptr, &pFileStream);
 	if (FAILED(hr)) {
@@ -458,7 +464,7 @@ bool UpdateXmlToggleSetting(bool toggle, const wchar_t* variable) {
 	}
 
 	CComPtr<IStream> pOutFileStream;
-	std::wstring tempFileName = settingsname + L".temp";
+	wstring tempFileName = settingsname + L".temp";
 	hr = SHCreateStreamOnFileEx(tempFileName.c_str(), STGM_CREATE | STGM_WRITE, FILE_ATTRIBUTE_NORMAL, TRUE, nullptr, &pOutFileStream);
 	if (FAILED(hr)) {
 		vddlog("e", "UpdatingXML: Failed to create output file stream.");
@@ -563,11 +569,10 @@ void GetGpuInfo()
 
 	string utf8_desc;
 	try {
-		wstring_convert<codecvt_utf8<wchar_t>> converter;
-		utf8_desc = converter.to_bytes(adapterOption.target_name);
+		utf8_desc = WStringToString(adapterOption.target_name);
 	}
 	catch (const exception& e) {
-		vddlog("e", ("Conversion error: "s + e.what()).c_str());
+		vddlog("e", ("Conversion error: " + string(e.what())).c_str());
 		return;
 	}
 
@@ -635,7 +640,7 @@ void HandleClient(HANDLE hPipe) {
 			bool debugEnabled = DebugLogEnabledQuery();
 			bool loggingEnabled = LogEnabledQuery(); 
 
-			std::wstring settingsResponse = L"SETTINGS ";
+			wstring settingsResponse = L"SETTINGS ";
 			settingsResponse += debugEnabled ? L"DEBUG=true " : L"DEBUG=false ";
 			settingsResponse += loggingEnabled ? L"LOG=true" : L"LOG=false";
 
@@ -752,7 +757,7 @@ bool initpath() {
 	if (lResult != ERROR_SUCCESS) {
 		ostringstream oss;
 		oss << "Failed to open registry key for path. Error code: " << lResult;
-		vddlog("i", oss.str().c_str());
+		vddlog("w", oss.str().c_str());
 		confpath = L"C:\\IddSampleDriver"; 
 		return false;
 	}
@@ -761,7 +766,7 @@ bool initpath() {
 	if (lResult != ERROR_SUCCESS) {
 		ostringstream oss;
 		oss << "Failed to open registry key for path. Error code: " << lResult;
-		vddlog("i", oss.str().c_str());
+		vddlog("w", oss.str().c_str());
 		confpath = L"C:\\IddSampleDriver"; 
 		RegCloseKey(hKey);
 		return false;
@@ -799,16 +804,13 @@ extern "C" NTSTATUS DriverEntry(
 	WDF_OBJECT_ATTRIBUTES Attributes;
 	WDF_OBJECT_ATTRIBUTES_INIT(&Attributes);
 
-	WDF_DRIVER_CONFIG_INIT(&Config,
-		IddSampleDeviceAdd
-	);
+	WDF_DRIVER_CONFIG_INIT(&Config, IddSampleDeviceAdd);
 
 	Config.EvtDriverUnload = EvtDriverUnload;
 	initpath();
 	logsEnabled = LogEnabledQuery();
-	vddlog("i","Driver Starting");
-	wstring_convert<codecvt_utf8<wchar_t>> converter;
-	string utf8_confpath = converter.to_bytes(confpath);
+	vddlog("i", "Driver Starting");
+	string utf8_confpath = WStringToString(confpath);
 	string logtext = "VDD Path: " + utf8_confpath;
 	vddlog("i", logtext.c_str());
 	LogIddCxVersion();
@@ -1740,8 +1742,7 @@ void IndirectDeviceContext::FinishInit()
 
 void IndirectDeviceContext::CreateMonitor(unsigned int index) {
 	wstring logMessage = L"Creating Monitor: " + to_wstring(index + 1);
-	wstring_convert<codecvt_utf8<wchar_t>> converter;
-	string narrowLogMessage = converter.to_bytes(logMessage);
+	string narrowLogMessage = WStringToString(logMessage);
 	vddlog("i", narrowLogMessage.c_str());
 
 	// ==============================
