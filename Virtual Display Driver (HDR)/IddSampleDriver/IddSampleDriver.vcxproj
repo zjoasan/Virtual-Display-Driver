@@ -251,6 +251,9 @@
     <DriverSign>
       <FileDigestAlgorithm>SHA1</FileDigestAlgorithm>
     </DriverSign>
+    <PostBuildEvent>
+      <Command>copy "$(ProjectDir)..\vdd_settings.xml" "$(TargetDir)"</Command>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
@@ -268,6 +271,9 @@
     <DriverSign>
       <FileDigestAlgorithm>SHA256</FileDigestAlgorithm>
     </DriverSign>
+    <PostBuildEvent>
+      <Command>copy "$(ProjectDir)..\vdd_settings.xml" "$(TargetDir)"</Command>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM'">
     <ClCompile>
