@@ -61,7 +61,7 @@
         
     </resolutions>
     <options>
-        <logging>true</logging>
+        <logging>false</logging>
         <!-- DEBUG LOGGING FOR EXPERTS ONLY!-->
         <debuglogging>false</debuglogging> 
         <!-- DEBUG LOGS CAN GENERATE 1000+ LINES-->
