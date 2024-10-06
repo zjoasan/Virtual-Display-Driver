@@ -11,7 +11,7 @@ This project uses the official Windows Indirect Display Driver combined with the
 - [Windows 11 23H2+ (HDR)](https://github.com/itsmikethetech/Virtual-Display-Driver/releases/tag/23.12.2HDR)
 
 ## Download Beta
-- [Universal Driver (Windows 10/11)](https://github.com/itsmikethetech/Virtual-Display-Driver/releases/tag/24.9.11) - Adds XML configuration support, automatic/manual GPU selection, and more. Thanks to Bud and Jocke!
+- [Universal Driver - 24.10.6 (Windows 10/11)](https://github.com/itsmikethetech/Virtual-Display-Driver/releases/tag/24.10.6-beta) - Adds XML configuration support by default, multi-level logging, automatic/manual GPU selection, and more. Thanks to Bud and Jocke!
 
  
 ## Installation
