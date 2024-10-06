@@ -149,7 +149,7 @@ NTSTATUS IddSampleDeviceAdd(WDFDRIVER Driver, PWDFDEVICE_INIT pDeviceInit)
     // IddConfig.EvtIddCxDeviceIoControl = IddSampleIoDeviceControl;
 
     loadOptions("C:\\IddSampleDriver\\option.txt");
-    Options.Adapter.load("C:\\IddSampleDriver\\adapter.txt");
+    Options.Adapter.load(L"C:\\IddSampleDriver\\adapter.txt");
     IddConfig.EvtIddCxAdapterInitFinished = IddSampleAdapterInitFinished;
 
     IddConfig.EvtIddCxParseMonitorDescription = IddSampleParseMonitorDescription;
