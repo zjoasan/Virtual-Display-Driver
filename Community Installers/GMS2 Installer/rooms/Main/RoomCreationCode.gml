@@ -1,1 +1,0 @@
-global.version=11;
