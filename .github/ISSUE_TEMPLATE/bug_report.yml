@@ -40,13 +40,18 @@ body:
       default: 0
     validations:
       required: true
+  - type: markdown
+    attributes:
+      value: |
+        If you struggle finding windows edition and version, Go to settings -> system -> about. Under windows specifications.
   - type: textarea
     id: bug-info
     attributes:
       label: Describe the bug
       description: Free text description.
-      placeholder: Tell us what you see!
-      value: "A clear and concise description of what the bug."
+      placeholder: |
+        Tell us what you see!
+        A clear and concise description of what the bug is.
     validations:
       required: true 
   - type: textarea
@@ -54,8 +59,9 @@ body:
     attributes:
       label: Steps to reproduce
       description: And if you can how to reproduce 
-      placeholder: Tell us how to reproduce!
-      value: "1. Go to '...', 2. Click on '....', and so on."
+      placeholder: |
+        Tell us how to reproduce!
+        Go to '...', 2. Click on '....', and so on.
     validations:
       required: false 
   - type: textarea
@@ -63,10 +69,20 @@ body:
     attributes:
       label: Expected behavior
       description: Please inform us about expected behavior.
-      placeholder: Description of behavior!
-      value: "When i Clicked..."
+      placeholder: |
+        Description of behavior!
+        When i Clicked...
     validations:
       required: false 
+  - type: textarea
+    id: log-file
+    attributes:
+      label: Log File (Beta Only)
+      description: Please attach the log file to help us diagnose the issue. You can drag and drop the file here or click to upload. The log can be retrieved by enabling the log file in the xml then restarting the driver.
+      placeholder: Drag and drop the log file here or click to upload.
+    validations:
+      required: false
+
   - type: input
     id: contact
     attributes:
