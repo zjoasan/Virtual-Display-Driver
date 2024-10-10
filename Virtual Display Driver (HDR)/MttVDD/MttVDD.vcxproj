@@ -45,7 +45,7 @@
     <ClInclude Include="Trace.h" />
   </ItemGroup>
   <ItemGroup>
-    <Inf Include="IddSampleDriver.inf" />
+    <Inf Include="MttVDD.inf" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{2D54CB75-8B17-4F11-97DC-847B0244CD46}</ProjectGuid>
@@ -252,7 +252,7 @@
       <FileDigestAlgorithm>SHA1</FileDigestAlgorithm>
     </DriverSign>
     <PostBuildEvent>
-      <Command>copy "$(ProjectDir)..\vdd_settings.xml" "$(TargetDir)\IddSampleDriver"</Command>
+      <Command>copy "$(ProjectDir)..\vdd_settings.xml" "$(TargetDir)\MttVDD"</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -272,7 +272,7 @@
       <FileDigestAlgorithm>SHA256</FileDigestAlgorithm>
     </DriverSign>
     <PostBuildEvent>
-      <Command>copy "$(ProjectDir)..\vdd_settings.xml" "$(TargetDir)\IddSampleDriver"</Command>
+      <Command>copy "$(ProjectDir)..\vdd_settings.xml" "$(TargetDir)\MttVDD"</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM'">
