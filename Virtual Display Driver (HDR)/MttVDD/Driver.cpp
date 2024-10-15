@@ -89,6 +89,7 @@ wstring gpuname;
 wstring confpath = L"C:\\VirtualDisplayDriver";
 bool logsEnabled = false;
 bool debugLogs;
+bool HDRPlus = false;
 
 
 
@@ -350,6 +351,108 @@ void vddlog(const char* type, const char* message) {
 	}
 }
 
+
+
+bool HDRPLUSEnabledQuery() {
+	wstring settingsname = confpath + L"\\vdd_settings.xml";
+	HKEY hKey;
+	DWORD dwValue;
+	DWORD dwBufferSize = sizeof(dwValue);
+	LONG lResult = RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"SOFTWARE\\MikeTheTech\\VirtualDisplayDriver", 0, KEY_READ, &hKey);
+
+	if (lResult == ERROR_SUCCESS) {
+		vddlog("d", "Get HDRPlus - Successfully opened registry key.");
+
+		lResult = RegQueryValueExW(hKey, L"HDRPLUS", NULL, NULL, (LPBYTE)&dwValue, &dwBufferSize);
+		if (lResult == ERROR_SUCCESS) {
+			RegCloseKey(hKey);
+			vddlog("d", "Get HDRPlus - HDRPLUS value retrieved from registry.");
+
+			if (dwValue == 1) {
+				vddlog("d", "Get HDRPlus - HDRPLUS is enabled (value = 1).");
+				return true;
+			}
+			else if (dwValue == 0) {
+				vddlog("d", "Get HDRPlus - HDRPLUS is disabled (value = 0). Checking XML settings.");
+				goto check_xml;
+			}
+		}
+		else {
+			vddlog("e", "Get HDRPlus - Failed to retrieve HDRPLUS value from registry. Attempting to read as string.");
+			wchar_t path[MAX_PATH];
+			dwBufferSize = sizeof(path);
+			lResult = RegQueryValueExW(hKey, L"HDRPLUS", NULL, NULL, (LPBYTE)path, &dwBufferSize);
+
+			if (lResult == ERROR_SUCCESS) {
+				wstring HDRValue(path);
+				RegCloseKey(hKey);
+				vddlog("d", "Get HDRPlus -  HDRPLUS string value retrieved from registry. ");
+
+				if (HDRValue == L"true" || HDRValue == L"1") {
+					vddlog("d", "Get HDRPlus -  HDRPLUS is enabled (string value).");
+					return true;
+				}
+				else if (HDRValue == L"false" || HDRValue == L"0") {
+					vddlog("d", " Get HDRPlus - HDRPLUS is disabled (string value). Checking XML settings.");
+					goto check_xml;
+				}
+			}
+			RegCloseKey(hKey);
+			vddlog("e", " Get HDRPlus - Failed to retrieve HDRPLUS string value from registry.");
+		}
+	}
+	else {
+		vddlog("e", "Get HDRPlus - Failed to open registry key for HDRPLUS.");
+	}
+
+check_xml:
+	CComPtr<IStream> pFileStream;
+	HRESULT hr = SHCreateStreamOnFileEx(settingsname.c_str(), STGM_READ, FILE_ATTRIBUTE_NORMAL, FALSE, nullptr, &pFileStream);
+
+	if (FAILED(hr)) {
+		vddlog("e", "Get HDRPlus - Failed to create file stream for XML settings.");
+		return false;
+	}
+	vddlog("d", "Get HDRPlus - File stream created for XML settings.");
+
+	CComPtr<IXmlReader> pReader;
+	hr = CreateXmlReader(__uuidof(IXmlReader), (void**)&pReader, nullptr);
+
+	if (FAILED(hr)) {
+		vddlog("e", "Get HDRPlus - Failed to create XML reader.");
+		return false;
+	}
+	vddlog("d", "Get HDRPlus - XML reader created.");
+
+	hr = pReader->SetInput(pFileStream);
+	if (FAILED(hr)) {
+		vddlog("e", "Get HDRPlus - Failed to set input for XML reader.");
+		return false;
+	}
+	vddlog("d", "Get HDRPlus - Input set for XML reader.");
+
+	XmlNodeType nodeType;
+	const wchar_t* pwszLocalName;
+	bool xmlHDRvalue = false;
+
+	while (S_OK == pReader->Read(&nodeType)) {
+		if (nodeType == XmlNodeType_Element) {
+			pReader->GetLocalName(&pwszLocalName, nullptr);
+			if (wcscmp(pwszLocalName, L"HDRPlus") == 0) {
+				pReader->Read(&nodeType);
+				if (nodeType == XmlNodeType_Text) {
+					const wchar_t* pwszValue;
+					pReader->GetValue(&pwszValue, nullptr);
+					xmlHDRvalue = (wcscmp(pwszValue, L"true") == 0);
+					vddlog("i", xmlHDRvalue ? "HDRPlus is enabled." : "HDRPlus is disabled.");
+					break;
+				}
+			}
+		}
+	}
+
+	return xmlHDRvalue;
+}
 
 void LogIddCxVersion() {
 	IDARG_OUT_GETVERSION outArgs;
@@ -807,6 +910,7 @@ extern "C" NTSTATUS DriverEntry(
 	Config.EvtDriverUnload = EvtDriverUnload;
 	initpath();
 	logsEnabled = LogEnabledQuery();
+	HDRPlus = HDRPLUSEnabledQuery();
 	vddlog("i", "Driver Starting");
 	string utf8_confpath = WStringToString(confpath);
 	string logtext = "VDD Path: " + utf8_confpath;
@@ -2039,7 +2143,13 @@ void CreateTargetMode2(IDDCX_TARGET_MODE2& Mode, UINT Width, UINT Height, UINT V
 	vddlog("d", logStream.str().c_str());
 
 	Mode.Size = sizeof(Mode);
-	Mode.BitsPerComponent.Rgb = IDDCX_BITS_PER_COMPONENT_8 | IDDCX_BITS_PER_COMPONENT_10;
+	if (HDRPlus) {
+		Mode.BitsPerComponent.Rgb = IDDCX_BITS_PER_COMPONENT_8 | IDDCX_BITS_PER_COMPONENT_12;
+	}
+	else {
+		Mode.BitsPerComponent.Rgb = IDDCX_BITS_PER_COMPONENT_8 | IDDCX_BITS_PER_COMPONENT_10;
+	}
+	
 
 	logStream.str(""); 
 	logStream << "IDDCX_TARGET_MODE2 configured with Size: " << Mode.Size
@@ -2138,7 +2248,12 @@ NTSTATUS IddSampleEvtIddCxAdapterQueryTargetInfo(
 	UNREFERENCED_PARAMETER(pInArgs);
 
 	pOutArgs->TargetCaps = IDDCX_TARGET_CAPS_HIGH_COLOR_SPACE;
-	pOutArgs->DitheringSupport.Rgb = IDDCX_BITS_PER_COMPONENT_10;
+	if (HDRPlus) {
+		pOutArgs->DitheringSupport.Rgb = IDDCX_BITS_PER_COMPONENT_12;
+	}
+	else {
+		pOutArgs->DitheringSupport.Rgb = IDDCX_BITS_PER_COMPONENT_10;
+	}
 
 	logStream.str("");
 	logStream << "Target capabilities set to: " << pOutArgs->TargetCaps
@@ -2212,7 +2327,14 @@ NTSTATUS IddSampleEvtIddCxParseMonitorDescription2(
 			pInArgs->pMonitorModes[ModeIndex].Size = sizeof(IDDCX_MONITOR_MODE2);
 			pInArgs->pMonitorModes[ModeIndex].Origin = IDDCX_MONITOR_MODE_ORIGIN_MONITORDESCRIPTOR;
 			pInArgs->pMonitorModes[ModeIndex].MonitorVideoSignalInfo = s_KnownMonitorModes2[ModeIndex];
-			pInArgs->pMonitorModes[ModeIndex].BitsPerComponent.Rgb = IDDCX_BITS_PER_COMPONENT_8 | IDDCX_BITS_PER_COMPONENT_10;
+
+			if (HDRPlus) {
+				pInArgs->pMonitorModes[ModeIndex].BitsPerComponent.Rgb = IDDCX_BITS_PER_COMPONENT_8 | IDDCX_BITS_PER_COMPONENT_12;
+			}
+			else {
+				pInArgs->pMonitorModes[ModeIndex].BitsPerComponent.Rgb = IDDCX_BITS_PER_COMPONENT_8 | IDDCX_BITS_PER_COMPONENT_10;
+			}
+
 
 			logStream << "\n  ModeIndex: " << ModeIndex
 				<< "\n    Size: " << pInArgs->pMonitorModes[ModeIndex].Size
