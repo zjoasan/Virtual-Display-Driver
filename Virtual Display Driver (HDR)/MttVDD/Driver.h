@@ -100,7 +100,7 @@ namespace Microsoft
 
         public:
             static const DISPLAYCONFIG_VIDEO_SIGNAL_INFO s_KnownMonitorModes[];
-            static const BYTE s_KnownMonitorEdid[];
+            static std::vector<BYTE> s_KnownMonitorEdid;
         };
     }
 }

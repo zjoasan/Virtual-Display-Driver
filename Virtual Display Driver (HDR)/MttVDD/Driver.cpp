@@ -90,8 +90,9 @@ wstring confpath = L"C:\\VirtualDisplayDriver";
 bool logsEnabled = false;
 bool debugLogs;
 bool HDRPlus = false;
+bool customEdid = false;
 
-
+vector<unsigned char> Microsoft::IndirectDisp::IndirectDeviceContext::s_KnownMonitorEdid; //Changed to support static vector
 
 struct IndirectDeviceContextWrapper
 {
@@ -452,6 +453,108 @@ check_xml:
 	}
 
 	return xmlHDRvalue;
+}
+
+
+bool CustomEdidEnabledQuery() {
+	wstring settingsname = confpath + L"\\vdd_settings.xml";
+	HKEY hKey;
+	DWORD dwValue;
+	DWORD dwBufferSize = sizeof(dwValue);
+	LONG lResult = RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"SOFTWARE\\MikeTheTech\\VirtualDisplayDriver", 0, KEY_READ, &hKey);
+
+	if (lResult == ERROR_SUCCESS) {
+		vddlog("d", "Get CustomEdid - Successfully opened registry key.");
+
+		lResult = RegQueryValueExW(hKey, L"CUSTOMEDID", NULL, NULL, (LPBYTE)&dwValue, &dwBufferSize);
+		if (lResult == ERROR_SUCCESS) {
+			RegCloseKey(hKey);
+			vddlog("d", "Get CustomEdid - CustomEdid value retrieved from registry.");
+
+			if (dwValue == 1) {
+				vddlog("d", "Get CustomEdid - CustomEdid is enabled (value = 1).");
+				return true;
+			}
+			else if (dwValue == 0) {
+				vddlog("d", "Get CustomEdid - CustomEdid is disabled (value = 0). Checking XML settings.");
+				goto check_xml;
+			}
+		}
+		else {
+			vddlog("e", "Get CustomEdid - Failed to retrieve CustomEdid value from registry. Attempting to read as string.");
+			wchar_t path[MAX_PATH];
+			dwBufferSize = sizeof(path);
+			lResult = RegQueryValueExW(hKey, L"CUSTOMEDID", NULL, NULL, (LPBYTE)path, &dwBufferSize);
+
+			if (lResult == ERROR_SUCCESS) {
+				wstring CustomEdidValue(path);
+				RegCloseKey(hKey);
+				vddlog("d", "Get CustomEdid -  CustomEdid string value retrieved from registry. ");
+
+				if (CustomEdidValue == L"true" || CustomEdidValue == L"1") {
+					vddlog("d", "Get CustomEdid -  CustomEdid is enabled (string value).");
+					return true;
+				}
+				else if (CustomEdidValue == L"false" || CustomEdidValue == L"0") {
+					vddlog("d", " Get CustomEdid - CustomEdid is disabled (string value). Checking XML settings.");
+					goto check_xml;
+				}
+			}
+			RegCloseKey(hKey);
+			vddlog("e", " Get CustomEdid - Failed to retrieve CustomEdid string value from registry.");
+		}
+	}
+	else {
+		vddlog("e", "Get CustomEdid - Failed to open registry key for CustomEdid.");
+	}
+
+check_xml:
+	CComPtr<IStream> pFileStream;
+	HRESULT hr = SHCreateStreamOnFileEx(settingsname.c_str(), STGM_READ, FILE_ATTRIBUTE_NORMAL, FALSE, nullptr, &pFileStream);
+
+	if (FAILED(hr)) {
+		vddlog("e", "Get CustomEdid - Failed to create file stream for XML settings.");
+		return false;
+	}
+	vddlog("d", "Get CustomEdid - File stream created for XML settings.");
+
+	CComPtr<IXmlReader> pReader;
+	hr = CreateXmlReader(__uuidof(IXmlReader), (void**)&pReader, nullptr);
+
+	if (FAILED(hr)) {
+		vddlog("e", "Get CustomEdid - Failed to create XML reader.");
+		return false;
+	}
+	vddlog("d", "Get CustomEdid - XML reader created.");
+
+	hr = pReader->SetInput(pFileStream);
+	if (FAILED(hr)) {
+		vddlog("e", "Get CustomEdid - Failed to set input for XML reader.");
+		return false;
+	}
+	vddlog("d", "Get CustomEdid - Input set for XML reader.");
+
+	XmlNodeType nodeType;
+	const wchar_t* pwszLocalName;
+	bool xmlCustomEdidvalue = false;
+
+	while (S_OK == pReader->Read(&nodeType)) {
+		if (nodeType == XmlNodeType_Element) {
+			pReader->GetLocalName(&pwszLocalName, nullptr);
+			if (wcscmp(pwszLocalName, L"CustomEdid") == 0) {
+				pReader->Read(&nodeType);
+				if (nodeType == XmlNodeType_Text) {
+					const wchar_t* pwszValue;
+					pReader->GetValue(&pwszValue, nullptr);
+					xmlCustomEdidvalue = (wcscmp(pwszValue, L"true") == 0);
+					vddlog("i", xmlCustomEdidvalue ? "CustomEdid is enabled." : "CustomEdid is disabled.");
+					break;
+				}
+			}
+		}
+	}
+
+	return xmlCustomEdidvalue;
 }
 
 void LogIddCxVersion() {
@@ -911,6 +1014,7 @@ extern "C" NTSTATUS DriverEntry(
 	initpath();
 	logsEnabled = LogEnabledQuery();
 	HDRPlus = HDRPLUSEnabledQuery();
+	customEdid = CustomEdidEnabledQuery();
 	vddlog("i", "Driver Starting");
 	string utf8_confpath = WStringToString(confpath);
 	string logtext = "VDD Path: " + utf8_confpath;
@@ -1702,8 +1806,7 @@ constexpr DISPLAYCONFIG_VIDEO_SIGNAL_INFO dispinfo(UINT32 h, UINT32 v, UINT32 r)
 	};
 }
 
-// This is a sample monitor EDID - FOR SAMPLE PURPOSES ONLY
-const BYTE IndirectDeviceContext::s_KnownMonitorEdid[] =
+vector<BYTE> hardcodedEdid =
 {
 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x36, 0x94, 0x37, 0x13, 0xe7, 0x1e, 0xe7, 0x1e,
 0x1c, 0x22, 0x01, 0x03, 0x80, 0x32, 0x1f, 0x78, 0x07, 0xee, 0x95, 0xa3, 0x54, 0x4c, 0x99, 0x26,
@@ -1722,6 +1825,85 @@ const BYTE IndirectDeviceContext::s_KnownMonitorEdid[] =
 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x8c
 };
+
+
+void modifyEdid(vector<BYTE>& edid) {
+	if (edid.size() < 12) {
+		return;
+	}
+
+	edid[8] = 0x36;
+	edid[9] = 0x94;
+	edid[10] = 0x37;
+	edid[11] = 0x13;
+}
+
+
+
+BYTE calculateChecksum(const std::vector<BYTE>& edid) {
+	int sum = 0;
+	for (int i = 0; i < 127; ++i) {
+		sum += edid[i];
+	}
+	sum %= 256;
+	if (sum != 0) {
+		sum = 256 - sum;
+	}
+	return static_cast<BYTE>(sum);
+	// check sum calculations. We dont need to include old checksum in calculation, so we only read up to the byte before.
+	// Anything after the checksum bytes arent part of the checksum - a flaw with edid managment, not with us
+}
+
+vector<BYTE> loadEdid(const string& filePath) {
+	if (customEdid) {
+		vddlog("i", "Attempting to use user Edid");
+	}
+	else {
+		vddlog("i", "Using hardcoded edid");
+		return hardcodedEdid;
+	}
+
+
+	ifstream file(filePath, ios::binary | ios::ate);
+	if (!file) {
+		vddlog("i", "No custom edid found");
+		vddlog("i", "Using hardcoded edid");
+		return hardcodedEdid;
+	}
+
+	streamsize size = file.tellg();
+	file.seekg(0, ios::beg);
+
+	vector<BYTE> buffer(size);
+	if (file.read((char*)buffer.data(), size)) {
+		//calculate checksum and compare it to 127 byte, if false then return hardcoded if true then return buffer to prevent loading borked edid.
+		BYTE calculatedChecksum = calculateChecksum(buffer);
+		if (calculatedChecksum != buffer[127]) {
+			vddlog("e", "Custom edid failed due to invalid checksum");
+			vddlog("i", "Using hardcoded edid");
+			return hardcodedEdid;  
+		}
+		vddlog("i", "Using custom edid");
+		return buffer;
+	}
+	else {
+		vddlog("i", "Using hardcoded edid");
+		return hardcodedEdid;
+	}
+}
+
+int maincalc() {
+	vector<BYTE> edid = loadEdid(WStringToString(confpath) + "\\user_edid.bin");
+
+	modifyEdid(edid);
+	BYTE checksum = calculateChecksum(edid);
+	edid[127] = checksum;
+	// Setting this variable is depricated, hardcoded edid is either returned or custom in loading edid function
+	IndirectDeviceContext::s_KnownMonitorEdid = edid;
+	return 0;
+}
+
+
 
 IndirectDeviceContext::IndirectDeviceContext(_In_ WDFDEVICE WdfDevice) :
 	m_WdfDevice(WdfDevice)
@@ -1747,6 +1929,7 @@ IndirectDeviceContext::~IndirectDeviceContext()
 
 void IndirectDeviceContext::InitAdapter()
 {
+	maincalc();
 	stringstream logStream;
 
 	// ==============================
@@ -1864,8 +2047,25 @@ void IndirectDeviceContext::CreateMonitor(unsigned int index) {
 	MonitorInfo.ConnectorIndex = index;
 	MonitorInfo.MonitorDescription.Size = sizeof(MonitorInfo.MonitorDescription);
 	MonitorInfo.MonitorDescription.Type = IDDCX_MONITOR_DESCRIPTION_TYPE_EDID;
-	MonitorInfo.MonitorDescription.DataSize = sizeof(s_KnownMonitorEdid);
-	MonitorInfo.MonitorDescription.pData = const_cast<BYTE*>(s_KnownMonitorEdid);
+	//MonitorInfo.MonitorDescription.DataSize = sizeof(s_KnownMonitorEdid);        can no longer use size of as converted to vector
+	if (s_KnownMonitorEdid.size() > UINT_MAX)
+	{
+		vddlog("e", "Edid size passes UINT_Max, escape to prevent loading borked display");
+	}
+	else
+	{
+		MonitorInfo.MonitorDescription.DataSize = static_cast<UINT>(s_KnownMonitorEdid.size());
+	}
+	//MonitorInfo.MonitorDescription.pData = const_cast<BYTE*>(s_KnownMonitorEdid);
+	// Changed from using const_cast to data() to safely access the EDID data.
+	// This improves type safety and code readability, as it eliminates the need for casting 
+	// and ensures we are directly working with the underlying container of known monitor EDID data.
+	MonitorInfo.MonitorDescription.pData = IndirectDeviceContext::s_KnownMonitorEdid.data();
+
+
+
+
+
 
 	// ==============================
 	// TODO: The monitor's container ID should be distinct from "this" device's container ID if the monitor is not

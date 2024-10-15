@@ -61,6 +61,7 @@
         
     </resolutions>
     <options>
+		<CustomEdid>false</CustomEdid> <!-- Custom Edid should be named "user_edid.bin"! This does not support emulating resolutions!-->
 		<HDRPlus>false</HDRPlus>
 		<logging>false</logging>
         <!-- DEBUG LOGGING FOR EXPERTS ONLY!-->
