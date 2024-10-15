@@ -82,7 +82,7 @@ struct
 {
 	AdapterOption Adapter;
 } Options;
-vector<tuple<int, int, int>> monitorModes;
+vector<tuple<int, int, int, int>> monitorModes;
 vector< DISPLAYCONFIG_VIDEO_SIGNAL_INFO> s_KnownMonitorModes2;
 UINT numVirtualDisplays;
 wstring gpuname;
@@ -261,6 +261,25 @@ string WStringToString(const wstring& wstr) { //basically just a function for co
 	string str(size_needed, 0);
 	WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), (int)wstr.size(), &str[0], size_needed, NULL, NULL);
 	return str;
+}
+
+int gcd(int a, int b) {
+	while (b != 0) {
+		int temp = b;
+		b = a % b;
+		a = temp;
+	}
+	return a;
+}
+
+void float_to_vsync(float refresh_rate, int& num, int& den) {
+	den = 10000;
+
+	num = static_cast<int>(round(refresh_rate * den));
+
+	int divisor = gcd(num, den);
+	num /= divisor;
+	den /= divisor;
 }
 
 void vddlog(const char* type, const char* message) {
@@ -1073,7 +1092,7 @@ void loadSettings() {
 		UINT cwchValue;
 		wstring currentElement;
 		wstring width, height, refreshRate;
-		vector<tuple<int, int, int>> res;
+		vector<tuple<int, int, int, int>> res;
 		wstring gpuFriendlyName;
 		UINT monitorcount = 1;
 
@@ -1118,9 +1137,12 @@ void loadSettings() {
 					if (refreshRate.empty()) {
 						refreshRate = L"30";
 					}
-					res.push_back(make_tuple(stoi(width), stoi(height), stoi(refreshRate)));
+					int vsync_num, vsync_den;
+					float_to_vsync(stof(refreshRate), vsync_num, vsync_den);
+
+					res.push_back(make_tuple(stoi(width), stoi(height), vsync_num, vsync_den));
 					stringstream ss;
-					ss << "Added: " << stoi(width) << "x" << stoi(height) << " @ " << stoi(refreshRate) << "Hz";
+					ss << "Added: " << stoi(width) << "x" << stoi(height) << " @ " << vsync_num << "/" << vsync_den << "Hz";
 					vddlog("d", ss.str().c_str());
 				}
 				break;
@@ -1137,80 +1159,92 @@ void loadSettings() {
 	ifstream ifs(optionsname);
 	if (ifs.is_open()) {
 		string line;
-		vector<tuple<int, int, int>> res;
+		vector<tuple<int, int, int, int>> res; 
 		getline(ifs, line);
 		numVirtualDisplays = stoi(line);
 		while (getline(ifs, line)) {
 			vector<string> strvec = split(line, ',');
 			if (strvec.size() == 3 && strvec[0].substr(0, 1) != "#") {
-				res.push_back({ stoi(strvec[0]),stoi(strvec[1]),stoi(strvec[2]) });
+				int vsync_num, vsync_den;
+				float_to_vsync(stof(strvec[2]), vsync_num, vsync_den); 
+				res.push_back({ stoi(strvec[0]), stoi(strvec[1]), vsync_num, vsync_den });
 			}
 		}
 		vddlog("i", "Using option.txt");
-		monitorModes = res; 
+		monitorModes = res;
 		for (const auto& mode : res) {
-			int width, height, refreshRate;
-			tie(width, height, refreshRate) = mode;
+			int width, height, vsync_num, vsync_den;
+			tie(width, height, vsync_num, vsync_den) = mode;
 			stringstream ss;
-			ss << "Resolution: " << width << "x" << height << " @ " << refreshRate << "Hz";
+			ss << "Resolution: " << width << "x" << height << " @ " << vsync_num << "/" << vsync_den << "Hz";
 			vddlog("d", ss.str().c_str());
 		}
 		return;
-
 	}
 	else {
 		numVirtualDisplays = 1;
-		vector<tuple<int, int, int>> res = {
-			make_tuple(800, 600, 30),
-			make_tuple(800, 600, 60),
-			make_tuple(800, 600, 90),
-			make_tuple(800, 600, 120),
-			make_tuple(800, 600, 144),
-			make_tuple(800, 600, 165),
-			make_tuple(1280, 720, 30),
-			make_tuple(1280, 720, 60),
-			make_tuple(1280, 720, 90),
-			make_tuple(1280, 720, 130),
-			make_tuple(1280, 720, 144),
-			make_tuple(1280, 720, 165),
-			make_tuple(1366, 768, 30),
-			make_tuple(1366, 768, 60),
-			make_tuple(1366, 768, 90),
-			make_tuple(1366, 768, 120),
-			make_tuple(1366, 768, 144),
-			make_tuple(1366, 768, 165),
-			make_tuple(1920, 1080, 30),
-			make_tuple(1920, 1080, 60),
-			make_tuple(1920, 1080, 90),
-			make_tuple(1920, 1080, 120),
-			make_tuple(1920, 1080, 144),
-			make_tuple(1920, 1080, 165),
-			make_tuple(2560, 1440, 30),
-			make_tuple(2560, 1440, 60),
-			make_tuple(2560, 1440, 90),
-			make_tuple(2560, 1440, 120),
-			make_tuple(2560, 1440, 144),
-			make_tuple(2560, 1440, 165),
-			make_tuple(3840, 2160, 30),
-			make_tuple(3840, 2160, 60),
-			make_tuple(3840, 2160, 90),
-			make_tuple(3840, 2160, 120),
-			make_tuple(3840, 2160, 144),
-			make_tuple(3840, 2160, 165)
-
+		vector<tuple<int, int, int, int>> res;
+		vector<tuple<int, int, float>> fallbackRes = {
+			{800, 600, 30.0f},
+			{800, 600, 60.0f},
+			{800, 600, 90.0f},
+			{800, 600, 120.0f},
+			{800, 600, 144.0f},
+			{800, 600, 165.0f},
+			{1280, 720, 30.0f},
+			{1280, 720, 60.0f},
+			{1280, 720, 90.0f},
+			{1280, 720, 130.0f},
+			{1280, 720, 144.0f},
+			{1280, 720, 165.0f},
+			{1366, 768, 30.0f},
+			{1366, 768, 60.0f},
+			{1366, 768, 90.0f},
+			{1366, 768, 120.0f},
+			{1366, 768, 144.0f},
+			{1366, 768, 165.0f},
+			{1920, 1080, 30.0f},
+			{1920, 1080, 60.0f},
+			{1920, 1080, 90.0f},
+			{1920, 1080, 120.0f},
+			{1920, 1080, 144.0f},
+			{1920, 1080, 165.0f},
+			{2560, 1440, 30.0f},
+			{2560, 1440, 60.0f},
+			{2560, 1440, 90.0f},
+			{2560, 1440, 120.0f},
+			{2560, 1440, 144.0f},
+			{2560, 1440, 165.0f},
+			{3840, 2160, 30.0f},
+			{3840, 2160, 60.0f},
+			{3840, 2160, 90.0f},
+			{3840, 2160, 120.0f},
+			{3840, 2160, 144.0f},
+			{3840, 2160, 165.0f}
 		};
 
 		vddlog("i", "Loading Fallback - no settings found");
-		for (const auto& mode : res) {
-			int width, height, refreshRate;
+
+		for (const auto& mode : fallbackRes) {
+			int width, height;
+			float refreshRate;
 			tie(width, height, refreshRate) = mode;
+
+			int vsync_num, vsync_den;
+			float_to_vsync(refreshRate, vsync_num, vsync_den); // Convert refresh rate to vsync_num and vsync_den
+
+			// Use the correct type for vsync_num and vsync_den (int, int)
+			res.push_back(make_tuple(width, height, vsync_num, vsync_den)); // Add the tuple with vsync values
+
 			stringstream ss;
-			ss << "Resolution: " << width << "x" << height << " @ " << refreshRate << "Hz";
+			ss << "Resolution: " << width << "x" << height << " @ " << vsync_num << "/" << vsync_den << "Hz";
 			vddlog("d", ss.str().c_str());
 		}
 
-		monitorModes = res; return;
+		monitorModes = res;
+		return;
 	}
+
 }
 
 _Use_decl_annotations_
@@ -1793,8 +1827,8 @@ void SwapChainProcessor::RunCore()
 const UINT64 MHZ = 1000000;
 const UINT64 KHZ = 1000;
 
-constexpr DISPLAYCONFIG_VIDEO_SIGNAL_INFO dispinfo(UINT32 h, UINT32 v, UINT32 r) {
-	const UINT32 clock_rate = r * (v + 4) * (v + 4) + 1000;
+constexpr DISPLAYCONFIG_VIDEO_SIGNAL_INFO dispinfo(UINT32 h, UINT32 v, UINT32 rn, UINT32 rd) {
+	const UINT32 clock_rate = rn * (v + 4) * (v + 4) / rd + 1000;
 	return {
 	  clock_rate,                                      // pixel clock rate [Hz]
 	{ clock_rate, v + 4 },                         // fractional horizontal refresh rate [Hz]
@@ -2244,7 +2278,7 @@ NTSTATUS IddSampleParseMonitorDescription(const IDARG_IN_PARSEMONITORDESCRIPTION
 	vddlog("d", logStream.str().c_str());
 
 	for (int i = 0; i < monitorModes.size(); i++) {
-		s_KnownMonitorModes2.push_back(dispinfo(std::get<0>(monitorModes[i]), std::get<1>(monitorModes[i]), std::get<2>(monitorModes[i])));
+		s_KnownMonitorModes2.push_back(dispinfo(std::get<0>(monitorModes[i]), std::get<1>(monitorModes[i]), std::get<2>(monitorModes[i]), std::get<3>(monitorModes[i])));
 	}
 	pOutArgs->MonitorModeBufferOutputCount = (UINT)monitorModes.size();
 
@@ -2299,23 +2333,25 @@ NTSTATUS IddSampleMonitorGetDefaultModes(IDDCX_MONITOR MonitorObject, const IDAR
 /// <summary>
 /// Creates a target mode from the fundamental mode attributes.
 /// </summary>
-void CreateTargetMode(DISPLAYCONFIG_VIDEO_SIGNAL_INFO& Mode, UINT Width, UINT Height, UINT VSync)
+void CreateTargetMode(DISPLAYCONFIG_VIDEO_SIGNAL_INFO& Mode, UINT Width, UINT Height, UINT VSyncNum, UINT VSyncDen)
 {
 	stringstream logStream;
 	logStream << "Creating target mode with Width: " << Width
 		<< ", Height: " << Height
-		<< ", VSync: " << VSync;
+		<< ", VSyncNum: " << VSyncNum
+		<< ", VSyncDen: " << VSyncDen;
 	vddlog("d", logStream.str().c_str());
 
 	Mode.totalSize.cx = Mode.activeSize.cx = Width;
 	Mode.totalSize.cy = Mode.activeSize.cy = Height;
 	Mode.AdditionalSignalInfo.vSyncFreqDivider = 1;
 	Mode.AdditionalSignalInfo.videoStandard = 255;
-	Mode.vSyncFreq.Numerator = VSync;
-	Mode.vSyncFreq.Denominator = Mode.hSyncFreq.Denominator = 1;
-	Mode.hSyncFreq.Numerator = VSync * Height;
+	Mode.vSyncFreq.Numerator = VSyncNum;
+	Mode.vSyncFreq.Denominator = VSyncDen;
+	Mode.hSyncFreq.Numerator = VSyncNum * Height;
+	Mode.hSyncFreq.Denominator = VSyncDen;
 	Mode.scanLineOrdering = DISPLAYCONFIG_SCANLINE_ORDERING_PROGRESSIVE;
-	Mode.pixelRate = VSync * Width * Height;
+	Mode.pixelRate = VSyncNum * Width * Height / VSyncDen;
 
 	logStream.str("");
 	logStream << "Target mode configured with:"
@@ -2328,18 +2364,19 @@ void CreateTargetMode(DISPLAYCONFIG_VIDEO_SIGNAL_INFO& Mode, UINT Width, UINT He
 	vddlog("d", logStream.str().c_str());
 }
 
-void CreateTargetMode(IDDCX_TARGET_MODE& Mode, UINT Width, UINT Height, UINT VSync)
+void CreateTargetMode(IDDCX_TARGET_MODE& Mode, UINT Width, UINT Height, UINT VSyncNum, UINT VSyncDen)
 {
 	Mode.Size = sizeof(Mode);
-	CreateTargetMode(Mode.TargetVideoSignalInfo.targetVideoSignalInfo, Width, Height, VSync);
+	CreateTargetMode(Mode.TargetVideoSignalInfo.targetVideoSignalInfo, Width, Height, VSyncNum, VSyncDen);
 }
 
-void CreateTargetMode2(IDDCX_TARGET_MODE2& Mode, UINT Width, UINT Height, UINT VSync)
+void CreateTargetMode2(IDDCX_TARGET_MODE2& Mode, UINT Width, UINT Height, UINT VSyncNum, UINT VSyncDen)
 {
 	stringstream logStream;
 	logStream << "Creating IDDCX_TARGET_MODE2 with Width: " << Width
 		<< ", Height: " << Height
-		<< ", VSync: " << VSync;
+		<< ", VSyncNum: " << VSyncNum
+		<< ", VSyncDen: " << VSyncDen;
 	vddlog("d", logStream.str().c_str());
 
 	Mode.Size = sizeof(Mode);
@@ -2356,7 +2393,7 @@ void CreateTargetMode2(IDDCX_TARGET_MODE2& Mode, UINT Width, UINT Height, UINT V
 		<< " and BitsPerComponent.Rgb: " << Mode.BitsPerComponent.Rgb;
 	vddlog("d", logStream.str().c_str());
 
-	CreateTargetMode(Mode.TargetVideoSignalInfo.targetVideoSignalInfo, Width, Height, VSync);
+	CreateTargetMode(Mode.TargetVideoSignalInfo.targetVideoSignalInfo, Width, Height, VSyncNum, VSyncDen);
 }
 
 _Use_decl_annotations_
@@ -2375,7 +2412,7 @@ NTSTATUS IddSampleMonitorQueryModes(IDDCX_MONITOR MonitorObject, const IDARG_IN_
 	// report the available set of modes for a given output as the intersection of monitor modes with target modes.
 
 	for (int i = 0; i < monitorModes.size(); i++) {
-		CreateTargetMode(TargetModes[i], std::get<0>(monitorModes[i]), std::get<1>(monitorModes[i]), std::get<2>(monitorModes[i]));
+		CreateTargetMode(TargetModes[i], std::get<0>(monitorModes[i]), std::get<1>(monitorModes[i]), std::get<2>(monitorModes[i]), std::get<3>(monitorModes[i]));
 
 		logStream.str("");
 		logStream << "Created target mode " << i << ": Width = " << std::get<0>(monitorModes[i])
@@ -2508,7 +2545,7 @@ NTSTATUS IddSampleEvtIddCxParseMonitorDescription2(
 	vddlog("d", logStream.str().c_str());
 
 	for (int i = 0; i < monitorModes.size(); i++) {
-		s_KnownMonitorModes2.push_back(dispinfo(std::get<0>(monitorModes[i]), std::get<1>(monitorModes[i]), std::get<2>(monitorModes[i])));
+		s_KnownMonitorModes2.push_back(dispinfo(std::get<0>(monitorModes[i]), std::get<1>(monitorModes[i]), std::get<2>(monitorModes[i]), std::get<3>(monitorModes[i])));
 	}
 	pOutArgs->MonitorModeBufferOutputCount = (UINT)monitorModes.size();
 
@@ -2576,7 +2613,7 @@ NTSTATUS IddSampleEvtIddCxMonitorQueryTargetModes2(
 	logStream << "Creating target modes:";
 
 	for (int i = 0; i < monitorModes.size(); i++) {
-		CreateTargetMode2(TargetModes[i], std::get<0>(monitorModes[i]), std::get<1>(monitorModes[i]), std::get<2>(monitorModes[i]));
+		CreateTargetMode2(TargetModes[i], std::get<0>(monitorModes[i]), std::get<1>(monitorModes[i]), std::get<2>(monitorModes[i]), std::get<3>(monitorModes[i]));
 		logStream << "\n  TargetModeIndex: " << i
 			<< "\n    Width: " << std::get<0>(monitorModes[i])
 			<< "\n    Height: " << std::get<1>(monitorModes[i])
