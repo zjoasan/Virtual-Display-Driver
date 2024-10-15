@@ -87,7 +87,7 @@ https://github.com/microsoft/Windows-driver-samples/tree/master/video/IndirectDi
 
 Thanks to **AKATrevorJay** https://github.com/akatrevorjay/edid-generator for the hi-res EDID.
 
-Shoutout to **zjoasan** and **Bud** for the helper scripts and build support!
+Shoutout to **[zjoasan](https://github.com/zjoasan)** and **[Bud](https://github.com/bud3699)** for the helper scripts and build support!
 
 ## Star History
 
