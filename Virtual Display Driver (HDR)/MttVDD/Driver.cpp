@@ -86,7 +86,7 @@ vector<tuple<int, int, int>> monitorModes;
 vector< DISPLAYCONFIG_VIDEO_SIGNAL_INFO> s_KnownMonitorModes2;
 UINT numVirtualDisplays;
 wstring gpuname;
-wstring confpath = L"C:\\IddSampleDriver";
+wstring confpath = L"C:\\VirtualDisplayDriver";
 bool logsEnabled = false;
 bool debugLogs;
 
@@ -752,13 +752,12 @@ bool initpath() {
 	wchar_t szPath[MAX_PATH];
 	DWORD dwBufferSize = sizeof(szPath);
 	LONG lResult;
-	vddlog("i", "Reading reg: Computer\\HKEY_LOCAL_MACHINE\\SOFTWARE\\MikeTheTech\\VirtualDisplayDriver");
+	//vddlog("i", "Reading reg: Computer\\HKEY_LOCAL_MACHINE\\SOFTWARE\\MikeTheTech\\VirtualDisplayDriver");           Remove this due to the fact, if reg key exists, this is called before reading
 	lResult = RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"SOFTWARE\\MikeTheTech\\VirtualDisplayDriver", 0, KEY_READ, &hKey);
 	if (lResult != ERROR_SUCCESS) {
 		ostringstream oss;
 		oss << "Failed to open registry key for path. Error code: " << lResult;
-		vddlog("w", oss.str().c_str());
-		confpath = L"C:\\IddSampleDriver"; 
+		vddlog("w", oss.str().c_str());  // These are okay to call though since they're only called if the reg doesnt exist
 		return false;
 	}
 
@@ -767,7 +766,6 @@ bool initpath() {
 		ostringstream oss;
 		oss << "Failed to open registry key for path. Error code: " << lResult;
 		vddlog("w", oss.str().c_str());
-		confpath = L"C:\\IddSampleDriver"; 
 		RegCloseKey(hKey);
 		return false;
 	}
@@ -1673,9 +1671,9 @@ void IndirectDeviceContext::InitAdapter()
 	AdapterCaps.EndPointDiagnostics.TransmissionType = IDDCX_TRANSMISSION_TYPE_WIRED_OTHER;
 
 	// Declare your device strings for telemetry (required)
-	AdapterCaps.EndPointDiagnostics.pEndPointFriendlyName = L"IddSample Device";
-	AdapterCaps.EndPointDiagnostics.pEndPointManufacturerName = L"Microsoft";
-	AdapterCaps.EndPointDiagnostics.pEndPointModelName = L"IddSample Model";
+	AdapterCaps.EndPointDiagnostics.pEndPointFriendlyName = L"VirtualDisplayDriver Device";
+	AdapterCaps.EndPointDiagnostics.pEndPointManufacturerName = L"MikeTheTech";
+	AdapterCaps.EndPointDiagnostics.pEndPointModelName = L"VirtualDisplayDriver Model";
 
 	// Declare your hardware and firmware versions (required)
 	IDDCX_ENDPOINT_VERSION Version = {};
@@ -1815,25 +1813,68 @@ void IndirectDeviceContext::CreateMonitor(unsigned int index) {
 	}
 }
 
-void IndirectDeviceContext::AssignSwapChain(IDDCX_SWAPCHAIN SwapChain, LUID RenderAdapter, HANDLE NewFrameEvent)
+void IndirectDeviceContext::AssignSwapChain(IDDCX_MONITOR& Monitor, IDDCX_SWAPCHAIN SwapChain, LUID RenderAdapter, HANDLE NewFrameEvent)
 {
 	m_ProcessingThread.reset();
 
 	auto Device = make_shared<Direct3DDevice>(RenderAdapter);
 	if (FAILED(Device->Init()))
 	{
-		// It's important to delete the swap-chain if D3D initialization fails, so that the OS knows to generate a new
-		// swap-chain and try again.
 		vddlog("e", "D3D Initialization failed, deleting existing swap-chain.");
 		WdfObjectDelete(SwapChain);
+		return;
 	}
 	else
 	{
-		// Create a new swap-chain processing thread
 		vddlog("d", "Creating a new swap-chain processing thread.");
 		m_ProcessingThread.reset(new SwapChainProcessor(SwapChain, Device, NewFrameEvent));
+
+		HANDLE mouseEvent = CreateEventA(
+			nullptr, 
+			false,   
+			false,   
+			"VirtualDisplayDriverMouse"
+		);
+
+		if (!mouseEvent)
+		{
+			vddlog("e", "Failed to create mouse event. No hardware cursor supported!");
+			return;
+		}
+
+		IDDCX_CURSOR_CAPS cursorInfo = {};
+		cursorInfo.Size = sizeof(cursorInfo);
+		cursorInfo.ColorXorCursorSupport = IDDCX_XOR_CURSOR_SUPPORT_FULL; 
+		cursorInfo.AlphaCursorSupport = true;
+
+		cursorInfo.MaxX = 512;       //Apparently in most cases 128 is fine but for safe guarding we will go 512, older intel cpus may be limited to 64x64
+		cursorInfo.MaxY = 512;  
+
+		//DirectXDevice->QueryMaxCursorSize(&cursorInfo.MaxX, &cursorInfo.MaxY);                 Experimental to get max cursor size - THIS IS NTO WORKING CODE
+
+
+		IDARG_IN_SETUP_HWCURSOR hwCursor = {};
+		hwCursor.CursorInfo = cursorInfo;
+		hwCursor.hNewCursorDataAvailable = mouseEvent;
+
+		NTSTATUS Status = IddCxMonitorSetupHardwareCursor(
+			Monitor,
+			&hwCursor
+		);
+
+		if (FAILED(Status))
+		{
+			CloseHandle(mouseEvent); 
+			return;
+		}
+
+		vddlog("d", "Hardware cursor setup completed successfully.");
+
+		// At this point, the swap-chain is set up and the hardware cursor is enabled
+		// Further swap-chain and cursor processing will occur in the new processing thread.
 	}
 }
+
 
 void IndirectDeviceContext::UnassignSwapChain()
 {
@@ -2066,7 +2107,7 @@ NTSTATUS IddSampleMonitorAssignSwapChain(IDDCX_MONITOR MonitorObject, const IDAR
 		<< "\n  hNextSurfaceAvailable: " << pInArgs->hNextSurfaceAvailable;
 	vddlog("d", logStream.str().c_str());
 	auto* pContext = WdfObjectGet_IndirectDeviceContextWrapper(MonitorObject);
-	pContext->pContext->AssignSwapChain(pInArgs->hSwapChain, pInArgs->RenderAdapterLuid, pInArgs->hNextSurfaceAvailable);
+	pContext->pContext->AssignSwapChain(MonitorObject, pInArgs->hSwapChain, pInArgs->RenderAdapterLuid, pInArgs->hNextSurfaceAvailable);
 	vddlog("d", "Swap chain assigned successfully.");
 	return STATUS_SUCCESS;
 }
