@@ -92,7 +92,7 @@ This software is provided "AS IS" with NO IMPLICIT OR EXPLICIT warranty. It's wo
 
 Shoutout to **[Bud](https://github.com/bud3699)** and **[zjoasan](https://github.com/zjoasan)** for jumping on the team and helping with not just support, but lots of great new features!
 
-Shoutout to **[Roshkins](https://github.com/roshkins/IddSampleDriver)** for the original repo:
+Shoutout to **[Roshkins](https://github.com/roshkins/IddSampleDriver)** for the original repo.
 
 Shoutout to **[Baloukj](https://github.com/baloukj/IddSampleDriver)** for the 8-bit / 10-bit support. (Also, first to push the new Microsoft Driver public!)
 
