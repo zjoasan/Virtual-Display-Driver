@@ -323,7 +323,7 @@ void vddlog(const char* type, const char* message) {
 		return;  
 	}
 
-	string narrow_logPath = WStringToString(logPath); // Convert to narrow string
+	string narrow_logPath = WStringToString(logPath);
 	const char* mode = "a";
 	errno_t err = fopen_s(&logFile, narrow_logPath.c_str(), mode);
 	if (err == 0 && logFile != nullptr) {
@@ -1231,10 +1231,9 @@ void loadSettings() {
 			tie(width, height, refreshRate) = mode;
 
 			int vsync_num, vsync_den;
-			float_to_vsync(refreshRate, vsync_num, vsync_den); // Convert refresh rate to vsync_num and vsync_den
+			float_to_vsync(refreshRate, vsync_num, vsync_den);
 
-			// Use the correct type for vsync_num and vsync_den (int, int)
-			res.push_back(make_tuple(width, height, vsync_num, vsync_den)); // Add the tuple with vsync values
+			res.push_back(make_tuple(width, height, vsync_num, vsync_den));
 
 			stringstream ss;
 			ss << "Resolution: " << width << "x" << height << " @ " << vsync_num << "/" << vsync_den << "Hz";
