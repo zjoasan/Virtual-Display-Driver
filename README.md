@@ -58,11 +58,11 @@ This project uses the official Windows Indirect Display Driver combined with the
 Next instructions are for those cases where the device is removed from the system, but driver stil remains. This happens when there is a connection to the device while trying to remove the drivers. To
 remedy this, there is a a few tricks built into windows. So here goes:
 
-5. Open up a powershell terminal and input this:
-6.  ```pnputil /enum-drivers```
-7. Locate iddsampledriver.inf, there might be multiple pages of text. Make a note of the "published name", it's often unique for your system, but might look like "oem139.inf"
-8.  ```pnputil /delete-driver oem139.inf```
-9.  (If you still get multiple displays after uninstall, try to repeat uninstall procedure in safemode.)
+1. Open up a powershell terminal and input this:
+2.  ```pnputil /enum-drivers```
+3. Locate iddsampledriver.inf, there might be multiple pages of text. Make a note of the "published name", it's often unique for your system, but might look like "oem139.inf"
+4.  ```pnputil /delete-driver oem139.inf```
+5.  (If you still get multiple displays after uninstall, try to repeat uninstall procedure in safemode.)
 
 ## HDR Support Now Available for Windows 11 22H2+ 
 
