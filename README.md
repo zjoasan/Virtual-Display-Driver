@@ -92,18 +92,15 @@ This software is provided "AS IS" with NO IMPLICIT OR EXPLICIT warranty. It's wo
 
 Shoutout to **[Bud](https://github.com/bud3699)** and **[zjoasan](https://github.com/zjoasan)** for jumping on the team and helping with not just support, but lots of great new features!
 
-Shoutout to **Roshkins** for the original repo:
-https://github.com/roshkins/IddSampleDriver
+Shoutout to **[Roshkins](https://github.com/roshkins/IddSampleDriver)** for the original repo:
 
-Shoutout to **Baloukj** for the 8-bit / 10-bit support. (Also, first to push the new Microsoft Driver public!)
-https://github.com/baloukj/IddSampleDriver
+Shoutout to **[Baloukj](https://github.com/baloukj/IddSampleDriver)** for the 8-bit / 10-bit support. (Also, first to push the new Microsoft Driver public!)
 
 Shoutout to **Anakngtokwa** for assisting with finding driver sources.
 
-**Microsoft** Indirect Display Driver/Sample (Driver code): 
-https://github.com/microsoft/Windows-driver-samples/tree/master/video/IndirectDisplay
+**[Microsoft](https://github.com/microsoft/Windows-driver-samples/tree/master/video/IndirectDisplay)** Indirect Display Driver/Sample (Driver code)
 
-Thanks to **AKATrevorJay** https://github.com/akatrevorjay/edid-generator for the hi-res EDID.
+Thanks to **[AKATrevorJay](https://github.com/akatrevorjay/edid-generator)** for the hi-res EDID.
 
 ## Star History
 
