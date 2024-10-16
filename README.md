@@ -96,7 +96,7 @@ Shoutout to **[Roshkins](https://github.com/roshkins/IddSampleDriver)** for the 
 
 Shoutout to **[Baloukj](https://github.com/baloukj/IddSampleDriver)** for the 8-bit / 10-bit support. (Also, first to push the new Microsoft Driver public!)
 
-Shoutout to **Anakngtokwa** for assisting with finding driver sources.
+Shoutout to **[Anakngtokwa](https://github.com/Anakngtokwa)** for assisting with finding driver sources.
 
 **[Microsoft](https://github.com/microsoft/Windows-driver-samples/tree/master/video/IndirectDisplay)** Indirect Display Driver/Sample (Driver code)
 
