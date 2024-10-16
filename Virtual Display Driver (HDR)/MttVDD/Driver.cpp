@@ -91,6 +91,7 @@ bool logsEnabled = false;
 bool debugLogs;
 bool HDRPlus = false;
 bool customEdid = false;
+bool hardwareCursor = false;
 
 vector<unsigned char> Microsoft::IndirectDisp::IndirectDeviceContext::s_KnownMonitorEdid; //Changed to support static vector
 
@@ -576,6 +577,108 @@ check_xml:
 	return xmlCustomEdidvalue;
 }
 
+
+bool HardwareCursorEnabledQuery() {
+	wstring settingsname = confpath + L"\\vdd_settings.xml";
+	HKEY hKey;
+	DWORD dwValue;
+	DWORD dwBufferSize = sizeof(dwValue);
+	LONG lResult = RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"SOFTWARE\\MikeTheTech\\VirtualDisplayDriver", 0, KEY_READ, &hKey);
+
+	if (lResult == ERROR_SUCCESS) {
+		vddlog("d", "Get HardwareCursor - Successfully opened registry key.");
+
+		lResult = RegQueryValueExW(hKey, L"HARDWARECURSOR", NULL, NULL, (LPBYTE)&dwValue, &dwBufferSize);
+		if (lResult == ERROR_SUCCESS) {
+			RegCloseKey(hKey);
+			vddlog("d", "Get HardwareCursor - HardwareCursor value retrieved from registry.");
+
+			if (dwValue == 1) {
+				vddlog("d", "Get HardwareCursor - HardwareCursor is enabled (value = 1).");
+				return true;
+			}
+			else if (dwValue == 0) {
+				vddlog("d", "Get HardwareCursor - HardwareCursor is disabled (value = 0). Checking XML settings.");
+				goto check_xml;
+			}
+		}
+		else {
+			vddlog("e", "Get HardwareCursor - Failed to retrieve HardwareCursor value from registry. Attempting to read as string.");
+			wchar_t path[MAX_PATH];
+			dwBufferSize = sizeof(path);
+			lResult = RegQueryValueExW(hKey, L"HARDWARECURSOR", NULL, NULL, (LPBYTE)path, &dwBufferSize);
+
+			if (lResult == ERROR_SUCCESS) {
+				wstring HardwareCursorValue(path);
+				RegCloseKey(hKey);
+				vddlog("d", "Get HardwareCursor -  HardwareCursor string value retrieved from registry. ");
+
+				if (HardwareCursorValue == L"true" || HardwareCursorValue == L"1") {
+					vddlog("d", "Get HardwareCursor -  HardwareCursor is enabled (string value).");
+					return true;
+				}
+				else if (HardwareCursorValue == L"false" || HardwareCursorValue == L"0") {
+					vddlog("d", " Get HardwareCursor - HardwareCursor is disabled (string value). Checking XML settings.");
+					goto check_xml;
+				}
+			}
+			RegCloseKey(hKey);
+			vddlog("e", " Get HardwareCursor - Failed to retrieve HardwareCursor string value from registry.");
+		}
+	}
+	else {
+		vddlog("e", "Get HardwareCursor - Failed to open registry key for HardwareCursor.");
+	}
+
+check_xml:
+	CComPtr<IStream> pFileStream;
+	HRESULT hr = SHCreateStreamOnFileEx(settingsname.c_str(), STGM_READ, FILE_ATTRIBUTE_NORMAL, FALSE, nullptr, &pFileStream);
+
+	if (FAILED(hr)) {
+		vddlog("e", "Get HardwareCursor - Failed to create file stream for XML settings.");
+		return false;
+	}
+	vddlog("d", "Get HardwareCursor - File stream created for XML settings.");
+
+	CComPtr<IXmlReader> pReader;
+	hr = CreateXmlReader(__uuidof(IXmlReader), (void**)&pReader, nullptr);
+
+	if (FAILED(hr)) {
+		vddlog("e", "Get HardwareCursor - Failed to create XML reader.");
+		return false;
+	}
+	vddlog("d", "Get HardwareCursor - XML reader created.");
+
+	hr = pReader->SetInput(pFileStream);
+	if (FAILED(hr)) {
+		vddlog("e", "Get HardwareCursor - Failed to set input for XML reader.");
+		return false;
+	}
+	vddlog("d", "Get HardwareCursor - Input set for XML reader.");
+
+	XmlNodeType nodeType;
+	const wchar_t* pwszLocalName;
+	bool xmlHardwareCursorValue = false;
+
+	while (S_OK == pReader->Read(&nodeType)) {
+		if (nodeType == XmlNodeType_Element) {
+			pReader->GetLocalName(&pwszLocalName, nullptr);
+			if (wcscmp(pwszLocalName, L"HardwareCursor") == 0) {
+				pReader->Read(&nodeType);
+				if (nodeType == XmlNodeType_Text) {
+					const wchar_t* pwszValue;
+					pReader->GetValue(&pwszValue, nullptr);
+					xmlHardwareCursorValue = (wcscmp(pwszValue, L"true") == 0);
+					vddlog("i", xmlHardwareCursorValue ? "HardwareCursor is enabled." : "HardwareCursor is disabled.");
+					break;
+				}
+			}
+		}
+	}
+
+	return xmlHardwareCursorValue;
+}
+
 void LogIddCxVersion() {
 	IDARG_OUT_GETVERSION outArgs;
 	NTSTATUS status = IddCxGetVersion(&outArgs);
@@ -1034,6 +1137,7 @@ extern "C" NTSTATUS DriverEntry(
 	logsEnabled = LogEnabledQuery();
 	HDRPlus = HDRPLUSEnabledQuery();
 	customEdid = CustomEdidEnabledQuery();
+	hardwareCursor = HardwareCursorEnabledQuery(); 
 	vddlog("i", "Driver Starting");
 	string utf8_confpath = WStringToString(confpath);
 	string logtext = "VDD Path: " + utf8_confpath;
@@ -2166,47 +2270,51 @@ void IndirectDeviceContext::AssignSwapChain(IDDCX_MONITOR& Monitor, IDDCX_SWAPCH
 		vddlog("d", "Creating a new swap-chain processing thread.");
 		m_ProcessingThread.reset(new SwapChainProcessor(SwapChain, Device, NewFrameEvent));
 
-		HANDLE mouseEvent = CreateEventA(
-			nullptr, 
-			false,   
-			false,   
-			"VirtualDisplayDriverMouse"
-		);
+		if (hardwareCursor){
+			HANDLE mouseEvent = CreateEventA(
+				nullptr, 
+				false,   
+				false,   
+				"VirtualDisplayDriverMouse"
+			);
 
-		if (!mouseEvent)
-		{
-			vddlog("e", "Failed to create mouse event. No hardware cursor supported!");
-			return;
+			if (!mouseEvent)
+			{
+				vddlog("e", "Failed to create mouse event. No hardware cursor supported!");
+				return;
+			}
+
+			IDDCX_CURSOR_CAPS cursorInfo = {};
+			cursorInfo.Size = sizeof(cursorInfo);
+			cursorInfo.ColorXorCursorSupport = IDDCX_XOR_CURSOR_SUPPORT_FULL; 
+			cursorInfo.AlphaCursorSupport = true;
+
+			cursorInfo.MaxX = 512;       //Apparently in most cases 128 is fine but for safe guarding we will go 512, older intel cpus may be limited to 64x64
+			cursorInfo.MaxY = 512;  
+
+			//DirectXDevice->QueryMaxCursorSize(&cursorInfo.MaxX, &cursorInfo.MaxY);                 Experimental to get max cursor size - THIS IS NTO WORKING CODE
+
+
+			IDARG_IN_SETUP_HWCURSOR hwCursor = {};
+			hwCursor.CursorInfo = cursorInfo;
+			hwCursor.hNewCursorDataAvailable = mouseEvent;
+
+			NTSTATUS Status = IddCxMonitorSetupHardwareCursor(
+				Monitor,
+				&hwCursor
+			);
+
+			if (FAILED(Status))
+			{
+				CloseHandle(mouseEvent); 
+				return;
+			}
+
+			vddlog("d", "Hardware cursor setup completed successfully.");
 		}
-
-		IDDCX_CURSOR_CAPS cursorInfo = {};
-		cursorInfo.Size = sizeof(cursorInfo);
-		cursorInfo.ColorXorCursorSupport = IDDCX_XOR_CURSOR_SUPPORT_FULL; 
-		cursorInfo.AlphaCursorSupport = true;
-
-		cursorInfo.MaxX = 512;       //Apparently in most cases 128 is fine but for safe guarding we will go 512, older intel cpus may be limited to 64x64
-		cursorInfo.MaxY = 512;  
-
-		//DirectXDevice->QueryMaxCursorSize(&cursorInfo.MaxX, &cursorInfo.MaxY);                 Experimental to get max cursor size - THIS IS NTO WORKING CODE
-
-
-		IDARG_IN_SETUP_HWCURSOR hwCursor = {};
-		hwCursor.CursorInfo = cursorInfo;
-		hwCursor.hNewCursorDataAvailable = mouseEvent;
-
-		NTSTATUS Status = IddCxMonitorSetupHardwareCursor(
-			Monitor,
-			&hwCursor
-		);
-
-		if (FAILED(Status))
-		{
-			CloseHandle(mouseEvent); 
-			return;
+		else {
+			vddlog("d", "Hardware cursor is disabled, Skipped creation.");
 		}
-
-		vddlog("d", "Hardware cursor setup completed successfully.");
-
 		// At this point, the swap-chain is set up and the hardware cursor is enabled
 		// Further swap-chain and cursor processing will occur in the new processing thread.
 	}
