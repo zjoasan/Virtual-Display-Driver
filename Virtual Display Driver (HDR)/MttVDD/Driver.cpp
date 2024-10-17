@@ -37,6 +37,10 @@ Environment:
 #include <iomanip>
 #include <cerrno>
 #include <locale>
+#include <cwchar>
+#include <string>
+#include <cstdlib>
+
 
 
 
@@ -912,6 +916,15 @@ void GetGpuInfo()
 }
 
 
+void ReloadDriver(HANDLE hPipe) {
+	auto* pContext = WdfObjectGet_IndirectDeviceContextWrapper(hPipe);
+	if (pContext && pContext->pContext) {
+		pContext->pContext->InitAdapter();
+		vddlog("i", "Adapter reinitialized");
+	}
+}
+
+
 void HandleClient(HANDLE hPipe) {
 	g_pipeHandle = hPipe;
 	vddlog("p", "Client Handling Enabled");
@@ -927,11 +940,8 @@ void HandleClient(HANDLE hPipe) {
 		vddlog("p", bufferstr.c_str());
 		if (wcsncmp(buffer, L"RELOAD_DRIVER", 13) == 0) {
 			vddlog("i", "Reloading the driver");
-			auto* pContext = WdfObjectGet_IndirectDeviceContextWrapper(hPipe);
-			if (pContext && pContext->pContext) {
-				pContext->pContext->InitAdapter();
-				vddlog("i", "Adapter reinitialized");
-			}
+			ReloadDriver(hPipe);
+			
 		}
 		else if (wcsncmp(buffer, L"LOG_DEBUG", 9) == 0) {
 			wchar_t* param = buffer + 10;
@@ -954,6 +964,45 @@ void HandleClient(HANDLE hPipe) {
 			else if (wcsncmp(param, L"false", 5) == 0) {
 				UpdateXmlToggleSetting(false, L"logging");
 				vddlog("i", "Logging disabled");
+			}
+		}
+		else if (wcsncmp(buffer, L"HDRPLUS", 7) == 0) {
+			wchar_t* param = buffer + 8;
+			if (wcsncmp(param, L"true", 4) == 0) {
+				UpdateXmlToggleSetting(true, L"HDRPlus");
+				vddlog("i", "HDR+ Enabled"); 
+				ReloadDriver(hPipe);
+			} 
+			else if (wcsncmp(param, L"false", 5) == 0) {
+				UpdateXmlToggleSetting(false, L"HDRPlus");
+				vddlog("i", "HDR+ Disabled");
+				ReloadDriver(hPipe);
+			}
+		}
+		else if (wcsncmp(buffer, L"CUSTOMEDID", 10) == 0) {
+			wchar_t* param = buffer + 11;
+			if (wcsncmp(param, L"true", 4) == 0) {
+				UpdateXmlToggleSetting(true, L"CustomEdid");
+				vddlog("i", "Custom Edid Enabled");
+				ReloadDriver(hPipe);
+			}
+			else if (wcsncmp(param, L"false", 5) == 0) {
+				UpdateXmlToggleSetting(false, L"CustomEdid");
+				vddlog("i", "Custom Edid Disabled");
+				ReloadDriver(hPipe);
+			}
+		}
+		else if (wcsncmp(buffer, L"HARDWARECURSOR", 14) == 0) {
+			wchar_t* param = buffer + 15;
+			if (wcsncmp(param, L"true", 4) == 0) {
+				UpdateXmlToggleSetting(true, L"HardwareCursor");
+				vddlog("i", "Hardware Cursor Enabled");
+				ReloadDriver(hPipe);
+			}
+			else if (wcsncmp(param, L"false", 5) == 0) {
+				UpdateXmlToggleSetting(false, L"HardwareCursor");
+				vddlog("i", "Hardware Cursor Disabled");
+				ReloadDriver(hPipe);
 			}
 		}
 		else if (wcsncmp(buffer, L"D3DDEVICEGPU", 12) == 0) {
@@ -982,6 +1031,12 @@ void HandleClient(HANDLE hPipe) {
 		}
 		else {
 			vddlog("e", "Unknown command");
+
+			size_t size_needed;
+			wcstombs_s(&size_needed, nullptr, 0, buffer, 0);
+			std::string narrowString(size_needed, 0);
+			wcstombs_s(nullptr, &narrowString[0], size_needed, buffer, size_needed);
+			vddlog("e", narrowString.c_str());
 		}
 	}
 	DisconnectNamedPipe(hPipe);
