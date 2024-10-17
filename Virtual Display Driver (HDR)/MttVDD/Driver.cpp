@@ -348,6 +348,9 @@ void vddlog(const char* type, const char* message) {
 		case 'w':
 			logType = "WARNING";
 			break;
+		case 't':
+			logType = "TESTING";
+			break;
 		default:
 			logType = "UNKNOWN";
 			break;
@@ -1576,6 +1579,13 @@ HRESULT Direct3DDevice::Init()
 		return hr;
 	}
 
+	DXGI_ADAPTER_DESC desc;
+	Adapter->GetDesc(&desc);
+	logStream.str("");
+	logStream << "Adapter found: " << desc.Description << " (Vendor ID: " << desc.VendorId << ", Device ID: " << desc.DeviceId << ")";
+	vddlog("i", logStream.str().c_str());
+
+
 #if 0 // Test code
 	{
 		FILE* file;
@@ -1589,8 +1599,11 @@ HRESULT Direct3DDevice::Init()
 	}
 #endif
 
+	D3D_FEATURE_LEVEL featureLevels[] = { D3D_FEATURE_LEVEL_11_1, D3D_FEATURE_LEVEL_11_0 };
+	D3D_FEATURE_LEVEL featureLevel;
+
 	// Create a D3D device using the render adapter. BGRA support is required by the WHQL test suite.
-	hr = D3D11CreateDevice(Adapter.Get(), D3D_DRIVER_TYPE_UNKNOWN, nullptr, D3D11_CREATE_DEVICE_BGRA_SUPPORT, nullptr, 0, D3D11_SDK_VERSION, &Device, nullptr, &DeviceContext);
+	hr = D3D11CreateDevice(Adapter.Get(), D3D_DRIVER_TYPE_UNKNOWN, nullptr, D3D11_CREATE_DEVICE_BGRA_SUPPORT, featureLevels, ARRAYSIZE(featureLevels), D3D11_SDK_VERSION, &Device, &featureLevel, &DeviceContext);
 	if (FAILED(hr))
 	{
 		// If creating the D3D device failed, it's possible the render GPU was lost (e.g. detachable GPU) or else the
@@ -1603,6 +1616,10 @@ HRESULT Direct3DDevice::Init()
 		vddlog("e", logStream.str().c_str());
 		return hr;
 	}
+
+	logStream.str("");
+	logStream << "Direct3D device created successfully. Feature Level: " << featureLevel;
+	vddlog("i", logStream.str().c_str());
 
 	return S_OK;
 }
@@ -2264,6 +2281,11 @@ void IndirectDeviceContext::AssignSwapChain(IDDCX_MONITOR& Monitor, IDDCX_SWAPCH
 		vddlog("e", "D3D Initialization failed, deleting existing swap-chain.");
 		WdfObjectDelete(SwapChain);
 		return;
+	}
+	HRESULT hr = Device->Init(); 
+	if (FAILED(hr))
+	{
+		vddlog("e", "Failed to initialize Direct3DDevice.");
 	}
 	else
 	{
