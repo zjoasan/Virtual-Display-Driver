@@ -96,6 +96,7 @@ bool debugLogs;
 bool HDRPlus = false;
 bool customEdid = false;
 bool hardwareCursor = false;
+IDDCX_BITS_PER_COMPONENT HDRCOLOUR;
 
 vector<unsigned char> Microsoft::IndirectDisp::IndirectDeviceContext::s_KnownMonitorEdid; //Changed to support static vector
 
@@ -285,6 +286,14 @@ void float_to_vsync(float refresh_rate, int& num, int& den) {
 	int divisor = gcd(num, den);
 	num /= divisor;
 	den /= divisor;
+}
+
+void  SendToPipe(const std::string& logMessage) {
+	if (g_pipeHandle != INVALID_HANDLE_VALUE) {
+		DWORD bytesWritten;
+		DWORD logMessageSize = static_cast<DWORD>(logMessage.size());
+		WriteFile(g_pipeHandle, logMessage.c_str(), logMessageSize, &bytesWritten, NULL);
+	}
 }
 
 void vddlog(const char* type, const char* message) {
@@ -1029,6 +1038,10 @@ void HandleClient(HANDLE hPipe) {
 			WriteFile(hPipe, settingsResponse.c_str(), bytesToWrite, &bytesWritten, NULL);
 
 		}
+		else if (wcsncmp(buffer, L"PING", 4) == 0) {
+			SendToPipe("PONG");
+			vddlog("p", "Heartbeat Ping");
+		}
 		else {
 			vddlog("e", "Unknown command");
 
@@ -1194,6 +1207,12 @@ extern "C" NTSTATUS DriverEntry(
 	initpath();
 	logsEnabled = LogEnabledQuery();
 	HDRPlus = HDRPLUSEnabledQuery();
+	if (HDRPlus) {
+		HDRCOLOUR = IDDCX_BITS_PER_COMPONENT_12; 
+	}
+	else {
+		HDRCOLOUR = IDDCX_BITS_PER_COMPONENT_10; 
+	}
 	customEdid = CustomEdidEnabledQuery();
 	hardwareCursor = HardwareCursorEnabledQuery(); 
 	vddlog("i", "Driver Starting");
@@ -2564,12 +2583,7 @@ void CreateTargetMode2(IDDCX_TARGET_MODE2& Mode, UINT Width, UINT Height, UINT V
 	vddlog("d", logStream.str().c_str());
 
 	Mode.Size = sizeof(Mode);
-	if (HDRPlus) {
-		Mode.BitsPerComponent.Rgb = IDDCX_BITS_PER_COMPONENT_8 | IDDCX_BITS_PER_COMPONENT_12;
-	}
-	else {
-		Mode.BitsPerComponent.Rgb = IDDCX_BITS_PER_COMPONENT_8 | IDDCX_BITS_PER_COMPONENT_10;
-	}
+	Mode.BitsPerComponent.Rgb = IDDCX_BITS_PER_COMPONENT_10 | HDRCOLOUR;
 	
 
 	logStream.str(""); 
@@ -2669,12 +2683,7 @@ NTSTATUS IddSampleEvtIddCxAdapterQueryTargetInfo(
 	UNREFERENCED_PARAMETER(pInArgs);
 
 	pOutArgs->TargetCaps = IDDCX_TARGET_CAPS_HIGH_COLOR_SPACE;
-	if (HDRPlus) {
-		pOutArgs->DitheringSupport.Rgb = IDDCX_BITS_PER_COMPONENT_12;
-	}
-	else {
-		pOutArgs->DitheringSupport.Rgb = IDDCX_BITS_PER_COMPONENT_10;
-	}
+	pOutArgs->DitheringSupport.Rgb = HDRCOLOUR;
 
 	logStream.str("");
 	logStream << "Target capabilities set to: " << pOutArgs->TargetCaps
@@ -2749,12 +2758,7 @@ NTSTATUS IddSampleEvtIddCxParseMonitorDescription2(
 			pInArgs->pMonitorModes[ModeIndex].Origin = IDDCX_MONITOR_MODE_ORIGIN_MONITORDESCRIPTOR;
 			pInArgs->pMonitorModes[ModeIndex].MonitorVideoSignalInfo = s_KnownMonitorModes2[ModeIndex];
 
-			if (HDRPlus) {
-				pInArgs->pMonitorModes[ModeIndex].BitsPerComponent.Rgb = IDDCX_BITS_PER_COMPONENT_8 | IDDCX_BITS_PER_COMPONENT_12;
-			}
-			else {
-				pInArgs->pMonitorModes[ModeIndex].BitsPerComponent.Rgb = IDDCX_BITS_PER_COMPONENT_8 | IDDCX_BITS_PER_COMPONENT_10;
-			}
+			pInArgs->pMonitorModes[ModeIndex].BitsPerComponent.Rgb = IDDCX_BITS_PER_COMPONENT_10 | HDRCOLOUR;
 
 
 			logStream << "\n  ModeIndex: " << ModeIndex
