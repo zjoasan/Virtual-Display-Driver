@@ -100,8 +100,8 @@ bool HDRPlus = false;
 bool SDR10 = false;
 bool customEdid = false;
 bool hardwareCursor = false;
-IDDCX_BITS_PER_COMPONENT SDRCOLOUR;
-IDDCX_BITS_PER_COMPONENT HDRCOLOUR;
+IDDCX_BITS_PER_COMPONENT SDRCOLOUR = IDDCX_BITS_PER_COMPONENT_8;
+IDDCX_BITS_PER_COMPONENT HDRCOLOUR = IDDCX_BITS_PER_COMPONENT_10;
 
 std::map<std::wstring, std::pair<std::wstring, std::wstring>> SettingsQueryMap = {
 	{L"LoggingEnabled", {L"LOGS", L"logging"}},
