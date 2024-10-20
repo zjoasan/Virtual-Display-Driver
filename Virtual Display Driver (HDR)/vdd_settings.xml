@@ -65,6 +65,7 @@
 		<HardwareCursor>true</HardwareCursor>
 		<SDR10bit>false</SDR10bit>
 		<HDRPlus>false</HDRPlus>
+		<!-- If you have SDR10 bit enabled, HDRPlus wont work - there’s a conflict because the display system cannot simultaneously handle both high dynamic range 12-bit and standard dynamic range 10-bit settings. -->
 		<logging>false</logging>
         <!-- DEBUG LOGGING FOR EXPERTS ONLY!-->
         <debuglogging>false</debuglogging> 
