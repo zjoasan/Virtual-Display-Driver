@@ -4,9 +4,6 @@ Copyright (c) Microsoft Corporation
 
 Abstract:
 
-	This module contains a sample implementation of an indirect display driver. See the included README.md file and the
-	various TODO blocks throughout this file and all accompanying files for information on building a production driver.
-
 	MSDN documentation on indirect displays can be found at https://msdn.microsoft.com/en-us/library/windows/hardware/mt761968(v=vs.85).aspx.
 
 Environment:
@@ -64,26 +61,26 @@ void vddlog(const char* type, const char* message);
 
 extern "C" DRIVER_INITIALIZE DriverEntry;
 
-EVT_WDF_DRIVER_DEVICE_ADD IddSampleDeviceAdd;
-EVT_WDF_DEVICE_D0_ENTRY IddSampleDeviceD0Entry;
+EVT_WDF_DRIVER_DEVICE_ADD VirtualDisplayDriverDeviceAdd;
+EVT_WDF_DEVICE_D0_ENTRY VirtualDisplayDriverDeviceD0Entry;
 
-EVT_IDD_CX_ADAPTER_INIT_FINISHED IddSampleAdapterInitFinished;
-EVT_IDD_CX_ADAPTER_COMMIT_MODES IddSampleAdapterCommitModes;
+EVT_IDD_CX_ADAPTER_INIT_FINISHED VirtualDisplayDriverAdapterInitFinished;
+EVT_IDD_CX_ADAPTER_COMMIT_MODES VirtualDisplayDriverAdapterCommitModes;
 
-EVT_IDD_CX_PARSE_MONITOR_DESCRIPTION IddSampleParseMonitorDescription;
-EVT_IDD_CX_MONITOR_GET_DEFAULT_DESCRIPTION_MODES IddSampleMonitorGetDefaultModes;
-EVT_IDD_CX_MONITOR_QUERY_TARGET_MODES IddSampleMonitorQueryModes;
+EVT_IDD_CX_PARSE_MONITOR_DESCRIPTION VirtualDisplayDriverParseMonitorDescription;
+EVT_IDD_CX_MONITOR_GET_DEFAULT_DESCRIPTION_MODES VirtualDisplayDriverMonitorGetDefaultModes;
+EVT_IDD_CX_MONITOR_QUERY_TARGET_MODES VirtualDisplayDriverMonitorQueryModes;
 
-EVT_IDD_CX_MONITOR_ASSIGN_SWAPCHAIN IddSampleMonitorAssignSwapChain;
-EVT_IDD_CX_MONITOR_UNASSIGN_SWAPCHAIN IddSampleMonitorUnassignSwapChain;
+EVT_IDD_CX_MONITOR_ASSIGN_SWAPCHAIN VirtualDisplayDriverMonitorAssignSwapChain;
+EVT_IDD_CX_MONITOR_UNASSIGN_SWAPCHAIN VirtualDisplayDriverMonitorUnassignSwapChain;
 
-EVT_IDD_CX_ADAPTER_QUERY_TARGET_INFO IddSampleEvtIddCxAdapterQueryTargetInfo;
-EVT_IDD_CX_MONITOR_SET_DEFAULT_HDR_METADATA IddSampleEvtIddCxMonitorSetDefaultHdrMetadata;
-EVT_IDD_CX_PARSE_MONITOR_DESCRIPTION2 IddSampleEvtIddCxParseMonitorDescription2;
-EVT_IDD_CX_MONITOR_QUERY_TARGET_MODES2 IddSampleEvtIddCxMonitorQueryTargetModes2;
-EVT_IDD_CX_ADAPTER_COMMIT_MODES2 IddSampleEvtIddCxAdapterCommitModes2;
+EVT_IDD_CX_ADAPTER_QUERY_TARGET_INFO VirtualDisplayDriverEvtIddCxAdapterQueryTargetInfo;
+EVT_IDD_CX_MONITOR_SET_DEFAULT_HDR_METADATA VirtualDisplayDriverEvtIddCxMonitorSetDefaultHdrMetadata;
+EVT_IDD_CX_PARSE_MONITOR_DESCRIPTION2 VirtualDisplayDriverEvtIddCxParseMonitorDescription2;
+EVT_IDD_CX_MONITOR_QUERY_TARGET_MODES2 VirtualDisplayDriverEvtIddCxMonitorQueryTargetModes2;
+EVT_IDD_CX_ADAPTER_COMMIT_MODES2 VirtualDisplayDriverEvtIddCxAdapterCommitModes2;
 
-EVT_IDD_CX_MONITOR_SET_GAMMA_RAMP IddSampleEvtIddCxMonitorSetGammaRamp;
+EVT_IDD_CX_MONITOR_SET_GAMMA_RAMP VirtualDisplayDriverEvtIddCxMonitorSetGammaRamp;
 
 struct
 {
@@ -878,7 +875,7 @@ extern "C" NTSTATUS DriverEntry(
 	WDF_OBJECT_ATTRIBUTES Attributes;
 	WDF_OBJECT_ATTRIBUTES_INIT(&Attributes);
 
-	WDF_DRIVER_CONFIG_INIT(&Config, IddSampleDeviceAdd);
+	WDF_DRIVER_CONFIG_INIT(&Config, VirtualDisplayDriverDeviceAdd);
 
 	Config.EvtDriverUnload = EvtDriverUnload;
 	initpath();
@@ -1103,7 +1100,7 @@ void loadSettings() {
 }
 
 _Use_decl_annotations_
-NTSTATUS IddSampleDeviceAdd(WDFDRIVER Driver, PWDFDEVICE_INIT pDeviceInit)
+NTSTATUS VirtualDisplayDriverDeviceAdd(WDFDRIVER Driver, PWDFDEVICE_INIT pDeviceInit)
 {
 	NTSTATUS Status = STATUS_SUCCESS;
 	WDF_PNPPOWER_EVENT_CALLBACKS PnpPowerCallbacks;
@@ -1117,7 +1114,7 @@ NTSTATUS IddSampleDeviceAdd(WDFDRIVER Driver, PWDFDEVICE_INIT pDeviceInit)
 
 	// Register for power callbacks - in this sample only power-on is needed
 	WDF_PNPPOWER_EVENT_CALLBACKS_INIT(&PnpPowerCallbacks);
-	PnpPowerCallbacks.EvtDeviceD0Entry = IddSampleDeviceD0Entry;
+	PnpPowerCallbacks.EvtDeviceD0Entry = VirtualDisplayDriverDeviceD0Entry;
 	WdfDeviceInitSetPnpPowerEventCallbacks(pDeviceInit, &PnpPowerCallbacks);
 
 	IDD_CX_CLIENT_CONFIG IddConfig;
@@ -1133,7 +1130,7 @@ NTSTATUS IddSampleDeviceAdd(WDFDRIVER Driver, PWDFDEVICE_INIT pDeviceInit)
 
 	// If the driver wishes to handle custom IoDeviceControl requests, it's necessary to use this callback since IddCx
 	// redirects IoDeviceControl requests to an internal queue. This sample does not need this.
-	// IddConfig.EvtIddCxDeviceIoControl = IddSampleIoDeviceControl;
+	// IddConfig.EvtIddCxDeviceIoControl = VirtualDisplayDriverIoDeviceControl;
 
 	loadSettings();
 	logStream.str("");
@@ -1151,25 +1148,25 @@ NTSTATUS IddSampleDeviceAdd(WDFDRIVER Driver, PWDFDEVICE_INIT pDeviceInit)
 
 
 
-	IddConfig.EvtIddCxAdapterInitFinished = IddSampleAdapterInitFinished;
+	IddConfig.EvtIddCxAdapterInitFinished = VirtualDisplayDriverAdapterInitFinished;
 
-	IddConfig.EvtIddCxMonitorGetDefaultDescriptionModes = IddSampleMonitorGetDefaultModes;
-	IddConfig.EvtIddCxMonitorAssignSwapChain = IddSampleMonitorAssignSwapChain;
-	IddConfig.EvtIddCxMonitorUnassignSwapChain = IddSampleMonitorUnassignSwapChain;
+	IddConfig.EvtIddCxMonitorGetDefaultDescriptionModes = VirtualDisplayDriverMonitorGetDefaultModes;
+	IddConfig.EvtIddCxMonitorAssignSwapChain = VirtualDisplayDriverMonitorAssignSwapChain;
+	IddConfig.EvtIddCxMonitorUnassignSwapChain = VirtualDisplayDriverMonitorUnassignSwapChain;
 
 	if (IDD_IS_FIELD_AVAILABLE(IDD_CX_CLIENT_CONFIG, EvtIddCxAdapterQueryTargetInfo))
 	{
-		IddConfig.EvtIddCxAdapterQueryTargetInfo = IddSampleEvtIddCxAdapterQueryTargetInfo;
-		IddConfig.EvtIddCxMonitorSetDefaultHdrMetaData = IddSampleEvtIddCxMonitorSetDefaultHdrMetadata;
-		IddConfig.EvtIddCxParseMonitorDescription2 = IddSampleEvtIddCxParseMonitorDescription2;
-		IddConfig.EvtIddCxMonitorQueryTargetModes2 = IddSampleEvtIddCxMonitorQueryTargetModes2;
-		IddConfig.EvtIddCxAdapterCommitModes2 = IddSampleEvtIddCxAdapterCommitModes2;
-		IddConfig.EvtIddCxMonitorSetGammaRamp = IddSampleEvtIddCxMonitorSetGammaRamp;
+		IddConfig.EvtIddCxAdapterQueryTargetInfo = VirtualDisplayDriverEvtIddCxAdapterQueryTargetInfo;
+		IddConfig.EvtIddCxMonitorSetDefaultHdrMetaData = VirtualDisplayDriverEvtIddCxMonitorSetDefaultHdrMetadata;
+		IddConfig.EvtIddCxParseMonitorDescription2 = VirtualDisplayDriverEvtIddCxParseMonitorDescription2;
+		IddConfig.EvtIddCxMonitorQueryTargetModes2 = VirtualDisplayDriverEvtIddCxMonitorQueryTargetModes2;
+		IddConfig.EvtIddCxAdapterCommitModes2 = VirtualDisplayDriverEvtIddCxAdapterCommitModes2;
+		IddConfig.EvtIddCxMonitorSetGammaRamp = VirtualDisplayDriverEvtIddCxMonitorSetGammaRamp;
 	}
 	else {
-		IddConfig.EvtIddCxParseMonitorDescription = IddSampleParseMonitorDescription;
-		IddConfig.EvtIddCxMonitorQueryTargetModes = IddSampleMonitorQueryModes;
-		IddConfig.EvtIddCxAdapterCommitModes = IddSampleAdapterCommitModes;
+		IddConfig.EvtIddCxParseMonitorDescription = VirtualDisplayDriverParseMonitorDescription;
+		IddConfig.EvtIddCxMonitorQueryTargetModes = VirtualDisplayDriverMonitorQueryModes;
+		IddConfig.EvtIddCxAdapterCommitModes = VirtualDisplayDriverAdapterCommitModes;
 	}
 
 	Status = IddCxDeviceInitConfig(pDeviceInit, &IddConfig);
@@ -1241,7 +1238,7 @@ NTSTATUS IddSampleDeviceAdd(WDFDRIVER Driver, PWDFDEVICE_INIT pDeviceInit)
 }
 
 _Use_decl_annotations_
-NTSTATUS IddSampleDeviceD0Entry(WDFDEVICE Device, WDF_POWER_DEVICE_STATE PreviousState)
+NTSTATUS VirtualDisplayDriverDeviceD0Entry(WDFDEVICE Device, WDF_POWER_DEVICE_STATE PreviousState)
 {
 	//UNREFERENCED_PARAMETER(PreviousState);
 
@@ -1338,7 +1335,7 @@ HRESULT Direct3DDevice::Init()
 #if 0 // Test code
 	{
 		FILE* file;
-		fopen_s(&file, "C:\\IddSampleDriver\\desc_hdr.bin", "wb");
+		fopen_s(&file, "C:\\VirtualDisplayDriver\\desc_hdr.bin", "wb");
 
 		DXGI_ADAPTER_DESC desc;
 		Adapter->GetDesc(&desc);
@@ -2104,7 +2101,7 @@ void IndirectDeviceContext::UnassignSwapChain()
 #pragma region DDI Callbacks
 
 _Use_decl_annotations_
-NTSTATUS IddSampleAdapterInitFinished(IDDCX_ADAPTER AdapterObject, const IDARG_IN_ADAPTER_INIT_FINISHED* pInArgs)
+NTSTATUS VirtualDisplayDriverAdapterInitFinished(IDDCX_ADAPTER AdapterObject, const IDARG_IN_ADAPTER_INIT_FINISHED* pInArgs)
 {
 	// This is called when the OS has finished setting up the adapter for use by the IddCx driver. It's now possible
 	// to report attached monitors.
@@ -2128,7 +2125,7 @@ NTSTATUS IddSampleAdapterInitFinished(IDDCX_ADAPTER AdapterObject, const IDARG_I
 }
 
 _Use_decl_annotations_
-NTSTATUS IddSampleAdapterCommitModes(IDDCX_ADAPTER AdapterObject, const IDARG_IN_COMMITMODES* pInArgs)
+NTSTATUS VirtualDisplayDriverAdapterCommitModes(IDDCX_ADAPTER AdapterObject, const IDARG_IN_COMMITMODES* pInArgs)
 {
 	UNREFERENCED_PARAMETER(AdapterObject);
 	UNREFERENCED_PARAMETER(pInArgs);
@@ -2144,7 +2141,7 @@ NTSTATUS IddSampleAdapterCommitModes(IDDCX_ADAPTER AdapterObject, const IDARG_IN
 	return STATUS_SUCCESS;
 }
 _Use_decl_annotations_
-NTSTATUS IddSampleParseMonitorDescription(const IDARG_IN_PARSEMONITORDESCRIPTION* pInArgs, IDARG_OUT_PARSEMONITORDESCRIPTION* pOutArgs)
+NTSTATUS VirtualDisplayDriverParseMonitorDescription(const IDARG_IN_PARSEMONITORDESCRIPTION* pInArgs, IDARG_OUT_PARSEMONITORDESCRIPTION* pOutArgs)
 {
 	// ==============================
 	// TODO: In a real driver, this function would be called to generate monitor modes for an EDID by parsing it. In
@@ -2190,7 +2187,7 @@ NTSTATUS IddSampleParseMonitorDescription(const IDARG_IN_PARSEMONITORDESCRIPTION
 }
 
 _Use_decl_annotations_
-NTSTATUS IddSampleMonitorGetDefaultModes(IDDCX_MONITOR MonitorObject, const IDARG_IN_GETDEFAULTDESCRIPTIONMODES* pInArgs, IDARG_OUT_GETDEFAULTDESCRIPTIONMODES* pOutArgs)
+NTSTATUS VirtualDisplayDriverMonitorGetDefaultModes(IDDCX_MONITOR MonitorObject, const IDARG_IN_GETDEFAULTDESCRIPTIONMODES* pInArgs, IDARG_OUT_GETDEFAULTDESCRIPTIONMODES* pOutArgs)
 {
 	UNREFERENCED_PARAMETER(MonitorObject);
 	UNREFERENCED_PARAMETER(pInArgs);
@@ -2270,7 +2267,7 @@ void CreateTargetMode2(IDDCX_TARGET_MODE2& Mode, UINT Width, UINT Height, UINT V
 }
 
 _Use_decl_annotations_
-NTSTATUS IddSampleMonitorQueryModes(IDDCX_MONITOR MonitorObject, const IDARG_IN_QUERYTARGETMODES* pInArgs, IDARG_OUT_QUERYTARGETMODES* pOutArgs)////////////////////////////////////////////////////////////////////////////////
+NTSTATUS VirtualDisplayDriverMonitorQueryModes(IDDCX_MONITOR MonitorObject, const IDARG_IN_QUERYTARGETMODES* pInArgs, IDARG_OUT_QUERYTARGETMODES* pOutArgs)////////////////////////////////////////////////////////////////////////////////
 {
 	UNREFERENCED_PARAMETER(MonitorObject);
 
@@ -2318,7 +2315,7 @@ NTSTATUS IddSampleMonitorQueryModes(IDDCX_MONITOR MonitorObject, const IDARG_IN_
 }
 
 _Use_decl_annotations_
-NTSTATUS IddSampleMonitorAssignSwapChain(IDDCX_MONITOR MonitorObject, const IDARG_IN_SETSWAPCHAIN* pInArgs)
+NTSTATUS VirtualDisplayDriverMonitorAssignSwapChain(IDDCX_MONITOR MonitorObject, const IDARG_IN_SETSWAPCHAIN* pInArgs)
 {
 	stringstream logStream;
 	logStream << "Assigning swap chain:"
@@ -2333,7 +2330,7 @@ NTSTATUS IddSampleMonitorAssignSwapChain(IDDCX_MONITOR MonitorObject, const IDAR
 }
 
 _Use_decl_annotations_
-NTSTATUS IddSampleMonitorUnassignSwapChain(IDDCX_MONITOR MonitorObject)
+NTSTATUS VirtualDisplayDriverMonitorUnassignSwapChain(IDDCX_MONITOR MonitorObject)
 {
 	stringstream logStream;
 	logStream << "Unassigning swap chain for monitor object: " << MonitorObject;
@@ -2345,7 +2342,7 @@ NTSTATUS IddSampleMonitorUnassignSwapChain(IDDCX_MONITOR MonitorObject)
 }
 
 _Use_decl_annotations_
-NTSTATUS IddSampleEvtIddCxAdapterQueryTargetInfo(
+NTSTATUS VirtualDisplayDriverEvtIddCxAdapterQueryTargetInfo(
 	IDDCX_ADAPTER AdapterObject,
 	IDARG_IN_QUERYTARGET_INFO* pInArgs,
 	IDARG_OUT_QUERYTARGET_INFO* pOutArgs
@@ -2369,7 +2366,7 @@ NTSTATUS IddSampleEvtIddCxAdapterQueryTargetInfo(
 }
 
 _Use_decl_annotations_
-NTSTATUS IddSampleEvtIddCxMonitorSetDefaultHdrMetadata(
+NTSTATUS VirtualDisplayDriverEvtIddCxMonitorSetDefaultHdrMetadata(
 	IDDCX_MONITOR MonitorObject,
 	const IDARG_IN_MONITOR_SET_DEFAULT_HDR_METADATA* pInArgs
 )
@@ -2386,7 +2383,7 @@ NTSTATUS IddSampleEvtIddCxMonitorSetDefaultHdrMetadata(
 }
 
 _Use_decl_annotations_
-NTSTATUS IddSampleEvtIddCxParseMonitorDescription2(
+NTSTATUS VirtualDisplayDriverEvtIddCxParseMonitorDescription2(
 	const IDARG_IN_PARSEMONITORDESCRIPTION2* pInArgs,
 	IDARG_OUT_PARSEMONITORDESCRIPTION* pOutArgs
 )
@@ -2452,7 +2449,7 @@ NTSTATUS IddSampleEvtIddCxParseMonitorDescription2(
 }
 
 _Use_decl_annotations_
-NTSTATUS IddSampleEvtIddCxMonitorQueryTargetModes2(
+NTSTATUS VirtualDisplayDriverEvtIddCxMonitorQueryTargetModes2(
 	IDDCX_MONITOR MonitorObject,
 	const IDARG_IN_QUERYTARGETMODES2* pInArgs,
 	IDARG_OUT_QUERYTARGETMODES* pOutArgs
@@ -2513,7 +2510,7 @@ NTSTATUS IddSampleEvtIddCxMonitorQueryTargetModes2(
 }
 
 _Use_decl_annotations_
-NTSTATUS IddSampleEvtIddCxAdapterCommitModes2(
+NTSTATUS VirtualDisplayDriverEvtIddCxAdapterCommitModes2(
 	IDDCX_ADAPTER AdapterObject,
 	const IDARG_IN_COMMITMODES2* pInArgs
 )
@@ -2525,7 +2522,7 @@ NTSTATUS IddSampleEvtIddCxAdapterCommitModes2(
 }
 
 _Use_decl_annotations_
-NTSTATUS IddSampleEvtIddCxMonitorSetGammaRamp(
+NTSTATUS VirtualDisplayDriverEvtIddCxMonitorSetGammaRamp(
 	IDDCX_MONITOR MonitorObject,
 	const IDARG_IN_SET_GAMMARAMP* pInArgs
 )
