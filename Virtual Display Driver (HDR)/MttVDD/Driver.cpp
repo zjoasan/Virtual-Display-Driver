@@ -97,14 +97,17 @@ wstring confpath = L"C:\\VirtualDisplayDriver";
 bool logsEnabled = false;
 bool debugLogs;
 bool HDRPlus = false;
+bool SDR10 = false;
 bool customEdid = false;
 bool hardwareCursor = false;
+IDDCX_BITS_PER_COMPONENT SDRCOLOUR;
 IDDCX_BITS_PER_COMPONENT HDRCOLOUR;
 
 std::map<std::wstring, std::pair<std::wstring, std::wstring>> SettingsQueryMap = {
 	{L"LoggingEnabled", {L"LOGS", L"logging"}},
 	{L"DebugLoggingEnabled", {L"DEBUGLOGS", L"debuglogging"}},
 	{L"HDRPlusEnabled", {L"HDRPLUS", L"HDRPlus"}},
+	{L"SDR10Enabled", {L"SDR10BIT", L"SDR10bit"}},
 	{L"CustomEdidEnabled", {L"CUSTOMEDID", L"CustomEdid"}},
 	{L"HardwareCursorEnabled", {L"HARDWARECURSOR", L"HardwareCursor"}},
 };
@@ -649,6 +652,19 @@ void HandleClient(HANDLE hPipe) {
 				ReloadDriver(hPipe);
 			}
 		}
+		else if (wcsncmp(buffer, L"SDR10", 5) == 0) {
+			wchar_t* param = buffer + 6;
+			if (wcsncmp(param, L"true", 4) == 0) {
+				UpdateXmlToggleSetting(true, L"SDR10");
+				vddlog("i", "SDR 10 Bit Enabled");
+				ReloadDriver(hPipe);
+			}
+			else if (wcsncmp(param, L"false", 5) == 0) {
+				UpdateXmlToggleSetting(false, L"SDR10");
+				vddlog("i", "SDR 10 Bit Disabled");
+				ReloadDriver(hPipe);
+			}
+		}
 		else if (wcsncmp(buffer, L"CUSTOMEDID", 10) == 0) {
 			wchar_t* param = buffer + 11;
 			if (wcsncmp(param, L"true", 4) == 0) {
@@ -868,12 +884,10 @@ extern "C" NTSTATUS DriverEntry(
 	initpath();
 	logsEnabled = EnabledQuery(L"LoggingEnabled");
 	HDRPlus = EnabledQuery(L"HDRPlusEnabled");
-	if (HDRPlus) {
-		HDRCOLOUR = IDDCX_BITS_PER_COMPONENT_12; 
-	}
-	else {
-		HDRCOLOUR = IDDCX_BITS_PER_COMPONENT_10; 
-	}
+	SDR10 = EnabledQuery(L"SDR10Enabled");
+	HDRCOLOUR = HDRPlus ? IDDCX_BITS_PER_COMPONENT_12 : IDDCX_BITS_PER_COMPONENT_10;
+	SDRCOLOUR = SDR10 ? IDDCX_BITS_PER_COMPONENT_10 : IDDCX_BITS_PER_COMPONENT_8;
+
 	customEdid = EnabledQuery(L"CustomEdidEnabled");
 	hardwareCursor = EnabledQuery(L"HardwareCursorEnabled");
 	vddlog("i", "Driver Starting");
@@ -2244,7 +2258,7 @@ void CreateTargetMode2(IDDCX_TARGET_MODE2& Mode, UINT Width, UINT Height, UINT V
 	vddlog("d", logStream.str().c_str());
 
 	Mode.Size = sizeof(Mode);
-	Mode.BitsPerComponent.Rgb = IDDCX_BITS_PER_COMPONENT_8 | HDRCOLOUR;
+	Mode.BitsPerComponent.Rgb = SDRCOLOUR | HDRCOLOUR;
 	
 
 	logStream.str(""); 
@@ -2419,7 +2433,7 @@ NTSTATUS IddSampleEvtIddCxParseMonitorDescription2(
 			pInArgs->pMonitorModes[ModeIndex].Origin = IDDCX_MONITOR_MODE_ORIGIN_MONITORDESCRIPTOR;
 			pInArgs->pMonitorModes[ModeIndex].MonitorVideoSignalInfo = s_KnownMonitorModes2[ModeIndex];
 
-			pInArgs->pMonitorModes[ModeIndex].BitsPerComponent.Rgb = IDDCX_BITS_PER_COMPONENT_8 | HDRCOLOUR;
+			pInArgs->pMonitorModes[ModeIndex].BitsPerComponent.Rgb = SDRCOLOUR | HDRCOLOUR;
 
 
 			logStream << "\n  ModeIndex: " << ModeIndex
