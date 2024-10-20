@@ -693,6 +693,10 @@ void HandleClient(HANDLE hPipe) {
 			InitializeD3DDeviceAndLogGPU();
 			vddlog("i", "Rerieved D3D GPU");
 		}
+		else if (wcsncmp(buffer, L"IDDCXVERSION", 12) == 0) {
+			vddlog("i", "Logging iddcx version");
+			LogIddCxVersion(); 
+		}
 		else if (wcsncmp(buffer, L"GETASSIGNEDGPU", 14) == 0) {
 			vddlog("i", "Retrieving Assigned GPU");
 			GetGpuInfo();
