@@ -40,6 +40,7 @@ Environment:
 #include <cwchar>
 #include <string>
 #include <cstdlib>
+#include <map>
 
 
 
@@ -58,6 +59,8 @@ HANDLE g_pipeHandle = INVALID_HANDLE_VALUE;
 using namespace std;
 using namespace Microsoft::IndirectDisp;
 using namespace Microsoft::WRL;
+
+void vddlog(const char* type, const char* message);
 
 extern "C" DRIVER_INITIALIZE DriverEntry;
 
@@ -98,6 +101,14 @@ bool customEdid = false;
 bool hardwareCursor = false;
 IDDCX_BITS_PER_COMPONENT HDRCOLOUR;
 
+std::map<std::wstring, std::pair<std::wstring, std::wstring>> SettingsQueryMap = {
+	{L"LoggingEnabled", {L"LOGS", L"logging"}},
+	{L"DebugLoggingEnabled", {L"DEBUGLOGS", L"debuglogging"}},
+	{L"HDRPlusEnabled", {L"HDRPLUS", L"HDRPlus"}},
+	{L"CustomEdidEnabled", {L"CUSTOMEDID", L"CustomEdid"}},
+	{L"HardwareCursorEnabled", {L"HARDWARECURSOR", L"HardwareCursor"}},
+};
+
 vector<unsigned char> Microsoft::IndirectDisp::IndirectDeviceContext::s_KnownMonitorEdid; //Changed to support static vector
 
 struct IndirectDeviceContextWrapper
@@ -110,18 +121,40 @@ struct IndirectDeviceContextWrapper
 		pContext = nullptr;
 	}
 };
+void LogQueries(const char* severity, const std::wstring& xmlName) {
+	if (xmlName.find(L"logging") == std::wstring::npos) { 
+		int size_needed = WideCharToMultiByte(CP_UTF8, 0, xmlName.c_str(), (int)xmlName.size(), NULL, 0, NULL, NULL);
+		if (size_needed > 0) {
+			std::string strMessage(size_needed, 0);
+			WideCharToMultiByte(CP_UTF8, 0, xmlName.c_str(), (int)xmlName.size(), &strMessage[0], size_needed, NULL, NULL);
+			vddlog(severity, strMessage.c_str());
+		}
+	}
+}
 
-bool LogEnabledQuery() {
-	wstring settingsname = confpath + L"\\vdd_settings.xml";
+
+bool EnabledQuery(const std::wstring& settingKey) {
+	auto it = SettingsQueryMap.find(settingKey);
+	if (it == SettingsQueryMap.end()) {
+		vddlog("e", "requested data not found in xml, consider updating xml!");
+		return false;
+	}
+
+	std::wstring regName = it->second.first;
+	std::wstring xmlName = it->second.second;
+
+	std::wstring settingsname = confpath + L"\\vdd_settings.xml";
 	HKEY hKey;
 	DWORD dwValue;
 	DWORD dwBufferSize = sizeof(dwValue);
 	LONG lResult = RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"SOFTWARE\\MikeTheTech\\VirtualDisplayDriver", 0, KEY_READ, &hKey);
+
 	if (lResult == ERROR_SUCCESS) {
-		lResult = RegQueryValueExW(hKey, L"LOGS", NULL, NULL, (LPBYTE)&dwValue, &dwBufferSize);
+		lResult = RegQueryValueExW(hKey, regName.c_str(), NULL, NULL, (LPBYTE)&dwValue, &dwBufferSize);
 		if (lResult == ERROR_SUCCESS) {
 			RegCloseKey(hKey);
 			if (dwValue == 1) {
+				LogQueries("d", xmlName + L" - is enabled (value = 1).");
 				return true;
 			}
 			else if (dwValue == 0) {
@@ -129,13 +162,15 @@ bool LogEnabledQuery() {
 			}
 		}
 		else {
+			LogQueries("d", xmlName + L" - Failed to retrieve value from registry. Attempting to read as string.");
 			wchar_t path[MAX_PATH];
 			dwBufferSize = sizeof(path);
-			lResult = RegQueryValueExW(hKey, L"LOGS", NULL, NULL, (LPBYTE)path, &dwBufferSize);
+			lResult = RegQueryValueExW(hKey, regName.c_str(), NULL, NULL, (LPBYTE)path, &dwBufferSize);
 			if (lResult == ERROR_SUCCESS) {
-				wstring logValue(path);
+				std::wstring logValue(path);
 				RegCloseKey(hKey);
 				if (logValue == L"true" || logValue == L"1") {
+					LogQueries("d", xmlName + L" - is enabled (string value).");
 					return true;
 				}
 				else if (logValue == L"false" || logValue == L"0") {
@@ -143,23 +178,28 @@ bool LogEnabledQuery() {
 				}
 			}
 			RegCloseKey(hKey);
+			LogQueries("d", xmlName + L" - Failed to retrieve string value from registry.");
 		}
 	}
+
 check_xml:
 	CComPtr<IStream> pFileStream;
 	HRESULT hr = SHCreateStreamOnFileEx(settingsname.c_str(), STGM_READ, FILE_ATTRIBUTE_NORMAL, FALSE, nullptr, &pFileStream);
 	if (FAILED(hr)) {
+		LogQueries("d", xmlName + L" - Failed to create file stream for XML settings.");
 		return false;
 	}
 
 	CComPtr<IXmlReader> pReader;
 	hr = CreateXmlReader(__uuidof(IXmlReader), (void**)&pReader, nullptr);
 	if (FAILED(hr)) {
+		LogQueries("d", xmlName + L" - Failed to create XML reader.");
 		return false;
 	}
 
 	hr = pReader->SetInput(pFileStream);
 	if (FAILED(hr)) {
+		LogQueries("d", xmlName + L" - Failed to set input for XML reader.");
 		return false;
 	}
 
@@ -170,87 +210,13 @@ check_xml:
 	while (S_OK == pReader->Read(&nodeType)) {
 		if (nodeType == XmlNodeType_Element) {
 			pReader->GetLocalName(&pwszLocalName, nullptr);
-			if (wcscmp(pwszLocalName, L"logging") == 0) {
+			if (wcscmp(pwszLocalName, xmlName.c_str()) == 0) {
 				pReader->Read(&nodeType);
 				if (nodeType == XmlNodeType_Text) {
 					const wchar_t* pwszValue;
 					pReader->GetValue(&pwszValue, nullptr);
 					xmlLoggingValue = (wcscmp(pwszValue, L"true") == 0);
-					break;
-				}
-			}
-		}
-	}
-
-	return xmlLoggingValue;
-}
-
-bool DebugLogEnabledQuery() {
-	wstring settingsname = confpath + L"\\vdd_settings.xml";
-	HKEY hKey;
-	DWORD dwValue;
-	DWORD dwBufferSize = sizeof(dwValue);
-	LONG lResult = RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"SOFTWARE\\MikeTheTech\\VirtualDisplayDriver", 0, KEY_READ, &hKey);
-	if (lResult == ERROR_SUCCESS) {
-		lResult = RegQueryValueExW(hKey, L"DEBUGLOGS", NULL, NULL, (LPBYTE)&dwValue, &dwBufferSize);
-		if (lResult == ERROR_SUCCESS) {
-			RegCloseKey(hKey);
-			if (dwValue == 1) {
-				return true;
-			}
-			else if (dwValue == 0) {
-				goto check_debug_xml;
-			}
-		}
-		else {
-			wchar_t path[MAX_PATH];
-			dwBufferSize = sizeof(path);
-			lResult = RegQueryValueExW(hKey, L"DEBUGLOGS", NULL, NULL, (LPBYTE)path, &dwBufferSize);
-			if (lResult == ERROR_SUCCESS) {
-				wstring logValue(path);
-				RegCloseKey(hKey);
-				if (logValue == L"true" || logValue == L"1") {
-					return true;
-				}
-				else if (logValue == L"false" || logValue == L"0") {
-					goto check_debug_xml;
-				}
-			}
-			RegCloseKey(hKey);
-		}
-	}
-
-	check_debug_xml:
-	CComPtr<IStream> pFileStream;
-	HRESULT hr = SHCreateStreamOnFileEx(settingsname.c_str(), STGM_READ, FILE_ATTRIBUTE_NORMAL, FALSE, nullptr, &pFileStream);
-	if (FAILED(hr)) {
-		return false;
-	}
-
-	CComPtr<IXmlReader> pReader;
-	hr = CreateXmlReader(__uuidof(IXmlReader), (void**)&pReader, nullptr);
-	if (FAILED(hr)) {
-		return false;
-	}
-
-	hr = pReader->SetInput(pFileStream);
-	if (FAILED(hr)) {
-		return false;
-	}
-
-	XmlNodeType nodeType;
-	const wchar_t* pwszLocalName;
-	bool xmlLoggingValue = false;
-
-	while (S_OK == pReader->Read(&nodeType)) {
-		if (nodeType == XmlNodeType_Element) {
-			pReader->GetLocalName(&pwszLocalName, nullptr);
-			if (wcscmp(pwszLocalName, L"debuglogging") == 0) {
-				pReader->Read(&nodeType);
-				if (nodeType == XmlNodeType_Text) {
-					const wchar_t* pwszValue;
-					pReader->GetValue(&pwszValue, nullptr);
-					xmlLoggingValue = (wcscmp(pwszValue, L"true") == 0);
+					LogQueries("i", xmlName + (xmlLoggingValue ? L" is enabled." : L" is disabled."));
 					break;
 				}
 			}
@@ -298,8 +264,8 @@ void  SendToPipe(const std::string& logMessage) {
 
 void vddlog(const char* type, const char* message) {
 	FILE* logFile;
-	logsEnabled = LogEnabledQuery();
-	debugLogs = DebugLogEnabledQuery();
+	logsEnabled = EnabledQuery(L"LoggingEnabled");
+	debugLogs = EnabledQuery(L"DebugLoggingEnabled");
 	wstring logsDir = confpath + L"\\Logs";
 
 	auto now = chrono::system_clock::now();
@@ -389,311 +355,6 @@ void vddlog(const char* type, const char* message) {
 }
 
 
-
-bool HDRPLUSEnabledQuery() {
-	wstring settingsname = confpath + L"\\vdd_settings.xml";
-	HKEY hKey;
-	DWORD dwValue;
-	DWORD dwBufferSize = sizeof(dwValue);
-	LONG lResult = RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"SOFTWARE\\MikeTheTech\\VirtualDisplayDriver", 0, KEY_READ, &hKey);
-
-	if (lResult == ERROR_SUCCESS) {
-		vddlog("d", "Get HDRPlus - Successfully opened registry key.");
-
-		lResult = RegQueryValueExW(hKey, L"HDRPLUS", NULL, NULL, (LPBYTE)&dwValue, &dwBufferSize);
-		if (lResult == ERROR_SUCCESS) {
-			RegCloseKey(hKey);
-			vddlog("d", "Get HDRPlus - HDRPLUS value retrieved from registry.");
-
-			if (dwValue == 1) {
-				vddlog("d", "Get HDRPlus - HDRPLUS is enabled (value = 1).");
-				return true;
-			}
-			else if (dwValue == 0) {
-				vddlog("d", "Get HDRPlus - HDRPLUS is disabled (value = 0). Checking XML settings.");
-				goto check_xml;
-			}
-		}
-		else {
-			vddlog("e", "Get HDRPlus - Failed to retrieve HDRPLUS value from registry. Attempting to read as string.");
-			wchar_t path[MAX_PATH];
-			dwBufferSize = sizeof(path);
-			lResult = RegQueryValueExW(hKey, L"HDRPLUS", NULL, NULL, (LPBYTE)path, &dwBufferSize);
-
-			if (lResult == ERROR_SUCCESS) {
-				wstring HDRValue(path);
-				RegCloseKey(hKey);
-				vddlog("d", "Get HDRPlus -  HDRPLUS string value retrieved from registry. ");
-
-				if (HDRValue == L"true" || HDRValue == L"1") {
-					vddlog("d", "Get HDRPlus -  HDRPLUS is enabled (string value).");
-					return true;
-				}
-				else if (HDRValue == L"false" || HDRValue == L"0") {
-					vddlog("d", " Get HDRPlus - HDRPLUS is disabled (string value). Checking XML settings.");
-					goto check_xml;
-				}
-			}
-			RegCloseKey(hKey);
-			vddlog("e", " Get HDRPlus - Failed to retrieve HDRPLUS string value from registry.");
-		}
-	}
-	else {
-		vddlog("e", "Get HDRPlus - Failed to open registry key for HDRPLUS.");
-	}
-
-check_xml:
-	CComPtr<IStream> pFileStream;
-	HRESULT hr = SHCreateStreamOnFileEx(settingsname.c_str(), STGM_READ, FILE_ATTRIBUTE_NORMAL, FALSE, nullptr, &pFileStream);
-
-	if (FAILED(hr)) {
-		vddlog("e", "Get HDRPlus - Failed to create file stream for XML settings.");
-		return false;
-	}
-	vddlog("d", "Get HDRPlus - File stream created for XML settings.");
-
-	CComPtr<IXmlReader> pReader;
-	hr = CreateXmlReader(__uuidof(IXmlReader), (void**)&pReader, nullptr);
-
-	if (FAILED(hr)) {
-		vddlog("e", "Get HDRPlus - Failed to create XML reader.");
-		return false;
-	}
-	vddlog("d", "Get HDRPlus - XML reader created.");
-
-	hr = pReader->SetInput(pFileStream);
-	if (FAILED(hr)) {
-		vddlog("e", "Get HDRPlus - Failed to set input for XML reader.");
-		return false;
-	}
-	vddlog("d", "Get HDRPlus - Input set for XML reader.");
-
-	XmlNodeType nodeType;
-	const wchar_t* pwszLocalName;
-	bool xmlHDRvalue = false;
-
-	while (S_OK == pReader->Read(&nodeType)) {
-		if (nodeType == XmlNodeType_Element) {
-			pReader->GetLocalName(&pwszLocalName, nullptr);
-			if (wcscmp(pwszLocalName, L"HDRPlus") == 0) {
-				pReader->Read(&nodeType);
-				if (nodeType == XmlNodeType_Text) {
-					const wchar_t* pwszValue;
-					pReader->GetValue(&pwszValue, nullptr);
-					xmlHDRvalue = (wcscmp(pwszValue, L"true") == 0);
-					vddlog("i", xmlHDRvalue ? "HDRPlus is enabled." : "HDRPlus is disabled.");
-					break;
-				}
-			}
-		}
-	}
-
-	return xmlHDRvalue;
-}
-
-
-bool CustomEdidEnabledQuery() {
-	wstring settingsname = confpath + L"\\vdd_settings.xml";
-	HKEY hKey;
-	DWORD dwValue;
-	DWORD dwBufferSize = sizeof(dwValue);
-	LONG lResult = RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"SOFTWARE\\MikeTheTech\\VirtualDisplayDriver", 0, KEY_READ, &hKey);
-
-	if (lResult == ERROR_SUCCESS) {
-		vddlog("d", "Get CustomEdid - Successfully opened registry key.");
-
-		lResult = RegQueryValueExW(hKey, L"CUSTOMEDID", NULL, NULL, (LPBYTE)&dwValue, &dwBufferSize);
-		if (lResult == ERROR_SUCCESS) {
-			RegCloseKey(hKey);
-			vddlog("d", "Get CustomEdid - CustomEdid value retrieved from registry.");
-
-			if (dwValue == 1) {
-				vddlog("d", "Get CustomEdid - CustomEdid is enabled (value = 1).");
-				return true;
-			}
-			else if (dwValue == 0) {
-				vddlog("d", "Get CustomEdid - CustomEdid is disabled (value = 0). Checking XML settings.");
-				goto check_xml;
-			}
-		}
-		else {
-			vddlog("e", "Get CustomEdid - Failed to retrieve CustomEdid value from registry. Attempting to read as string.");
-			wchar_t path[MAX_PATH];
-			dwBufferSize = sizeof(path);
-			lResult = RegQueryValueExW(hKey, L"CUSTOMEDID", NULL, NULL, (LPBYTE)path, &dwBufferSize);
-
-			if (lResult == ERROR_SUCCESS) {
-				wstring CustomEdidValue(path);
-				RegCloseKey(hKey);
-				vddlog("d", "Get CustomEdid -  CustomEdid string value retrieved from registry. ");
-
-				if (CustomEdidValue == L"true" || CustomEdidValue == L"1") {
-					vddlog("d", "Get CustomEdid -  CustomEdid is enabled (string value).");
-					return true;
-				}
-				else if (CustomEdidValue == L"false" || CustomEdidValue == L"0") {
-					vddlog("d", " Get CustomEdid - CustomEdid is disabled (string value). Checking XML settings.");
-					goto check_xml;
-				}
-			}
-			RegCloseKey(hKey);
-			vddlog("e", " Get CustomEdid - Failed to retrieve CustomEdid string value from registry.");
-		}
-	}
-	else {
-		vddlog("e", "Get CustomEdid - Failed to open registry key for CustomEdid.");
-	}
-
-check_xml:
-	CComPtr<IStream> pFileStream;
-	HRESULT hr = SHCreateStreamOnFileEx(settingsname.c_str(), STGM_READ, FILE_ATTRIBUTE_NORMAL, FALSE, nullptr, &pFileStream);
-
-	if (FAILED(hr)) {
-		vddlog("e", "Get CustomEdid - Failed to create file stream for XML settings.");
-		return false;
-	}
-	vddlog("d", "Get CustomEdid - File stream created for XML settings.");
-
-	CComPtr<IXmlReader> pReader;
-	hr = CreateXmlReader(__uuidof(IXmlReader), (void**)&pReader, nullptr);
-
-	if (FAILED(hr)) {
-		vddlog("e", "Get CustomEdid - Failed to create XML reader.");
-		return false;
-	}
-	vddlog("d", "Get CustomEdid - XML reader created.");
-
-	hr = pReader->SetInput(pFileStream);
-	if (FAILED(hr)) {
-		vddlog("e", "Get CustomEdid - Failed to set input for XML reader.");
-		return false;
-	}
-	vddlog("d", "Get CustomEdid - Input set for XML reader.");
-
-	XmlNodeType nodeType;
-	const wchar_t* pwszLocalName;
-	bool xmlCustomEdidvalue = false;
-
-	while (S_OK == pReader->Read(&nodeType)) {
-		if (nodeType == XmlNodeType_Element) {
-			pReader->GetLocalName(&pwszLocalName, nullptr);
-			if (wcscmp(pwszLocalName, L"CustomEdid") == 0) {
-				pReader->Read(&nodeType);
-				if (nodeType == XmlNodeType_Text) {
-					const wchar_t* pwszValue;
-					pReader->GetValue(&pwszValue, nullptr);
-					xmlCustomEdidvalue = (wcscmp(pwszValue, L"true") == 0);
-					vddlog("i", xmlCustomEdidvalue ? "CustomEdid is enabled." : "CustomEdid is disabled.");
-					break;
-				}
-			}
-		}
-	}
-
-	return xmlCustomEdidvalue;
-}
-
-
-bool HardwareCursorEnabledQuery() {
-	wstring settingsname = confpath + L"\\vdd_settings.xml";
-	HKEY hKey;
-	DWORD dwValue;
-	DWORD dwBufferSize = sizeof(dwValue);
-	LONG lResult = RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"SOFTWARE\\MikeTheTech\\VirtualDisplayDriver", 0, KEY_READ, &hKey);
-
-	if (lResult == ERROR_SUCCESS) {
-		vddlog("d", "Get HardwareCursor - Successfully opened registry key.");
-
-		lResult = RegQueryValueExW(hKey, L"HARDWARECURSOR", NULL, NULL, (LPBYTE)&dwValue, &dwBufferSize);
-		if (lResult == ERROR_SUCCESS) {
-			RegCloseKey(hKey);
-			vddlog("d", "Get HardwareCursor - HardwareCursor value retrieved from registry.");
-
-			if (dwValue == 1) {
-				vddlog("d", "Get HardwareCursor - HardwareCursor is enabled (value = 1).");
-				return true;
-			}
-			else if (dwValue == 0) {
-				vddlog("d", "Get HardwareCursor - HardwareCursor is disabled (value = 0). Checking XML settings.");
-				goto check_xml;
-			}
-		}
-		else {
-			vddlog("e", "Get HardwareCursor - Failed to retrieve HardwareCursor value from registry. Attempting to read as string.");
-			wchar_t path[MAX_PATH];
-			dwBufferSize = sizeof(path);
-			lResult = RegQueryValueExW(hKey, L"HARDWARECURSOR", NULL, NULL, (LPBYTE)path, &dwBufferSize);
-
-			if (lResult == ERROR_SUCCESS) {
-				wstring HardwareCursorValue(path);
-				RegCloseKey(hKey);
-				vddlog("d", "Get HardwareCursor -  HardwareCursor string value retrieved from registry. ");
-
-				if (HardwareCursorValue == L"true" || HardwareCursorValue == L"1") {
-					vddlog("d", "Get HardwareCursor -  HardwareCursor is enabled (string value).");
-					return true;
-				}
-				else if (HardwareCursorValue == L"false" || HardwareCursorValue == L"0") {
-					vddlog("d", " Get HardwareCursor - HardwareCursor is disabled (string value). Checking XML settings.");
-					goto check_xml;
-				}
-			}
-			RegCloseKey(hKey);
-			vddlog("e", " Get HardwareCursor - Failed to retrieve HardwareCursor string value from registry.");
-		}
-	}
-	else {
-		vddlog("e", "Get HardwareCursor - Failed to open registry key for HardwareCursor.");
-	}
-
-check_xml:
-	CComPtr<IStream> pFileStream;
-	HRESULT hr = SHCreateStreamOnFileEx(settingsname.c_str(), STGM_READ, FILE_ATTRIBUTE_NORMAL, FALSE, nullptr, &pFileStream);
-
-	if (FAILED(hr)) {
-		vddlog("e", "Get HardwareCursor - Failed to create file stream for XML settings.");
-		return false;
-	}
-	vddlog("d", "Get HardwareCursor - File stream created for XML settings.");
-
-	CComPtr<IXmlReader> pReader;
-	hr = CreateXmlReader(__uuidof(IXmlReader), (void**)&pReader, nullptr);
-
-	if (FAILED(hr)) {
-		vddlog("e", "Get HardwareCursor - Failed to create XML reader.");
-		return false;
-	}
-	vddlog("d", "Get HardwareCursor - XML reader created.");
-
-	hr = pReader->SetInput(pFileStream);
-	if (FAILED(hr)) {
-		vddlog("e", "Get HardwareCursor - Failed to set input for XML reader.");
-		return false;
-	}
-	vddlog("d", "Get HardwareCursor - Input set for XML reader.");
-
-	XmlNodeType nodeType;
-	const wchar_t* pwszLocalName;
-	bool xmlHardwareCursorValue = false;
-
-	while (S_OK == pReader->Read(&nodeType)) {
-		if (nodeType == XmlNodeType_Element) {
-			pReader->GetLocalName(&pwszLocalName, nullptr);
-			if (wcscmp(pwszLocalName, L"HardwareCursor") == 0) {
-				pReader->Read(&nodeType);
-				if (nodeType == XmlNodeType_Text) {
-					const wchar_t* pwszValue;
-					pReader->GetValue(&pwszValue, nullptr);
-					xmlHardwareCursorValue = (wcscmp(pwszValue, L"true") == 0);
-					vddlog("i", xmlHardwareCursorValue ? "HardwareCursor is enabled." : "HardwareCursor is disabled.");
-					break;
-				}
-			}
-		}
-	}
-
-	return xmlHardwareCursorValue;
-}
 
 void LogIddCxVersion() {
 	IDARG_OUT_GETVERSION outArgs;
@@ -1026,8 +687,8 @@ void HandleClient(HANDLE hPipe) {
 		} 
 		else if (wcsncmp(buffer, L"GETSETTINGS", 11) == 0) {
 			//query and return settings
-			bool debugEnabled = DebugLogEnabledQuery();
-			bool loggingEnabled = LogEnabledQuery(); 
+			bool debugEnabled = EnabledQuery(L"DebugLoggingEnabled");
+			bool loggingEnabled = EnabledQuery(L"LoggingEnabled");
 
 			wstring settingsResponse = L"SETTINGS ";
 			settingsResponse += debugEnabled ? L"DEBUG=true " : L"DEBUG=false ";
@@ -1205,16 +866,16 @@ extern "C" NTSTATUS DriverEntry(
 
 	Config.EvtDriverUnload = EvtDriverUnload;
 	initpath();
-	logsEnabled = LogEnabledQuery();
-	HDRPlus = HDRPLUSEnabledQuery();
+	logsEnabled = EnabledQuery(L"LoggingEnabled");
+	HDRPlus = EnabledQuery(L"HDRPlusEnabled");
 	if (HDRPlus) {
 		HDRCOLOUR = IDDCX_BITS_PER_COMPONENT_12; 
 	}
 	else {
 		HDRCOLOUR = IDDCX_BITS_PER_COMPONENT_10; 
 	}
-	customEdid = CustomEdidEnabledQuery();
-	hardwareCursor = HardwareCursorEnabledQuery(); 
+	customEdid = EnabledQuery(L"CustomEdidEnabled");
+	hardwareCursor = EnabledQuery(L"HardwareCursorEnabled");
 	vddlog("i", "Driver Starting");
 	string utf8_confpath = WStringToString(confpath);
 	string logtext = "VDD Path: " + utf8_confpath;
@@ -2583,7 +2244,7 @@ void CreateTargetMode2(IDDCX_TARGET_MODE2& Mode, UINT Width, UINT Height, UINT V
 	vddlog("d", logStream.str().c_str());
 
 	Mode.Size = sizeof(Mode);
-	Mode.BitsPerComponent.Rgb = IDDCX_BITS_PER_COMPONENT_10 | HDRCOLOUR;
+	Mode.BitsPerComponent.Rgb = IDDCX_BITS_PER_COMPONENT_8 | HDRCOLOUR;
 	
 
 	logStream.str(""); 
@@ -2758,7 +2419,7 @@ NTSTATUS IddSampleEvtIddCxParseMonitorDescription2(
 			pInArgs->pMonitorModes[ModeIndex].Origin = IDDCX_MONITOR_MODE_ORIGIN_MONITORDESCRIPTOR;
 			pInArgs->pMonitorModes[ModeIndex].MonitorVideoSignalInfo = s_KnownMonitorModes2[ModeIndex];
 
-			pInArgs->pMonitorModes[ModeIndex].BitsPerComponent.Rgb = IDDCX_BITS_PER_COMPONENT_10 | HDRCOLOUR;
+			pInArgs->pMonitorModes[ModeIndex].BitsPerComponent.Rgb = IDDCX_BITS_PER_COMPONENT_8 | HDRCOLOUR;
 
 
 			logStream << "\n  ModeIndex: " << ModeIndex
