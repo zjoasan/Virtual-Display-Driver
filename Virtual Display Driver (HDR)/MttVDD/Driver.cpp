@@ -1134,7 +1134,7 @@ NTSTATUS VirtualDisplayDriverDeviceAdd(WDFDRIVER Driver, PWDFDEVICE_INIT pDevice
 
 	loadSettings();
 	logStream.str("");
-	if (gpuname.empty()) {
+	if (gpuname.empty() || gpuname == L"default") {
 		const wstring adaptername = confpath + L"\\adapter.txt";
 		Options.Adapter.load(adaptername.c_str());
 		logStream << "Attempting to Load GPU from adapter.txt";

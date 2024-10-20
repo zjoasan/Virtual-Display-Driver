@@ -4,7 +4,7 @@
         <count>1</count>
     </monitors>
     <gpu>
-        <friendlyname></friendlyname>
+        <friendlyname>default</friendlyname>
     </gpu>
     <resolutions>
         <resolution>
