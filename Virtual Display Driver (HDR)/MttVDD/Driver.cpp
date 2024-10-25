@@ -98,6 +98,7 @@ bool SDR10 = false;
 bool customEdid = false;
 bool hardwareCursor = false;
 bool preventManufacturerSpoof = false;
+bool edidCeaOverride = false;
 IDDCX_BITS_PER_COMPONENT SDRCOLOUR = IDDCX_BITS_PER_COMPONENT_8;
 IDDCX_BITS_PER_COMPONENT HDRCOLOUR = IDDCX_BITS_PER_COMPONENT_10;
 
@@ -108,7 +109,8 @@ std::map<std::wstring, std::pair<std::wstring, std::wstring>> SettingsQueryMap =
 	{L"SDR10Enabled", {L"SDR10BIT", L"SDR10bit"}},
 	{L"CustomEdidEnabled", {L"CUSTOMEDID", L"CustomEdid"}},
 	{L"HardwareCursorEnabled", {L"HARDWARECURSOR", L"HardwareCursor"}},
-	{L"PreventMonitorSpoof", {L"PREVENTMONITORSPOOF", L"PreventSpoof"}}
+	{L"PreventMonitorSpoof", {L"PREVENTMONITORSPOOF", L"PreventSpoof"}},
+	{L"EdidCeaOverride", {L"EDIDCEAOVERRIDE", L"EdidCeaOverride"}},
 };
 
 vector<unsigned char> Microsoft::IndirectDisp::IndirectDeviceContext::s_KnownMonitorEdid; //Changed to support static vector
@@ -894,6 +896,7 @@ extern "C" NTSTATUS DriverEntry(
 	customEdid = EnabledQuery(L"CustomEdidEnabled");
 	hardwareCursor = EnabledQuery(L"HardwareCursorEnabled");
 	preventManufacturerSpoof = EnabledQuery(L"PreventMonitorSpoof");
+	edidCeaOverride = EnabledQuery(L"EdidCeaOverride");
 
 	vddlog("i", "Driver Starting");
 	string utf8_confpath = WStringToString(confpath);
@@ -1762,6 +1765,10 @@ BYTE calculateChecksum(const std::vector<BYTE>& edid) {
 	// Anything after the checksum bytes arent part of the checksum - a flaw with edid managment, not with us
 }
 
+void updateCeaExtensionCount(vector<BYTE>& edid, int count) {
+	edid[126] = static_cast<BYTE>(count);
+}
+
 vector<BYTE> loadEdid(const string& filePath) {
 	if (customEdid) {
 		vddlog("i", "Attempting to use user Edid");
@@ -1770,7 +1777,6 @@ vector<BYTE> loadEdid(const string& filePath) {
 		vddlog("i", "Using hardcoded edid");
 		return hardcodedEdid;
 	}
-
 
 	ifstream file(filePath, ios::binary | ios::ate);
 	if (!file) {
@@ -1789,8 +1795,22 @@ vector<BYTE> loadEdid(const string& filePath) {
 		if (calculatedChecksum != buffer[127]) {
 			vddlog("e", "Custom edid failed due to invalid checksum");
 			vddlog("i", "Using hardcoded edid");
-			return hardcodedEdid;  
+			return hardcodedEdid;
 		}
+
+		if (edidCeaOverride) {
+			if (buffer.size() == 256) {
+				for (int i = 128; i < 256; ++i) {
+					buffer[i] = hardcodedEdid[i];
+				}
+				updateCeaExtensionCount(buffer, 1);
+			}
+			else if (buffer.size() == 128) {
+				buffer.insert(buffer.end(), hardcodedEdid.begin() + 128, hardcodedEdid.end());
+				updateCeaExtensionCount(buffer, 1);
+			}
+		}
+
 		vddlog("i", "Using custom edid");
 		return buffer;
 	}
