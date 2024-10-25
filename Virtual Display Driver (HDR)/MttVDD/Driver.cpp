@@ -97,6 +97,7 @@ bool HDRPlus = false;
 bool SDR10 = false;
 bool customEdid = false;
 bool hardwareCursor = false;
+bool preventManufacturerSpoof = false;
 IDDCX_BITS_PER_COMPONENT SDRCOLOUR = IDDCX_BITS_PER_COMPONENT_8;
 IDDCX_BITS_PER_COMPONENT HDRCOLOUR = IDDCX_BITS_PER_COMPONENT_10;
 
@@ -107,6 +108,7 @@ std::map<std::wstring, std::pair<std::wstring, std::wstring>> SettingsQueryMap =
 	{L"SDR10Enabled", {L"SDR10BIT", L"SDR10bit"}},
 	{L"CustomEdidEnabled", {L"CUSTOMEDID", L"CustomEdid"}},
 	{L"HardwareCursorEnabled", {L"HARDWARECURSOR", L"HardwareCursor"}},
+	{L"PreventMonitorSpoof", {L"PREVENTMONITORSPOOF", L"PreventSpoof"}}
 };
 
 vector<unsigned char> Microsoft::IndirectDisp::IndirectDeviceContext::s_KnownMonitorEdid; //Changed to support static vector
@@ -891,6 +893,8 @@ extern "C" NTSTATUS DriverEntry(
 
 	customEdid = EnabledQuery(L"CustomEdidEnabled");
 	hardwareCursor = EnabledQuery(L"HardwareCursorEnabled");
+	preventManufacturerSpoof = EnabledQuery(L"PreventMonitorSpoof");
+
 	vddlog("i", "Driver Starting");
 	string utf8_confpath = WStringToString(confpath);
 	string logtext = "VDD Path: " + utf8_confpath;
@@ -1799,7 +1803,7 @@ vector<BYTE> loadEdid(const string& filePath) {
 int maincalc() {
 	vector<BYTE> edid = loadEdid(WStringToString(confpath) + "\\user_edid.bin");
 
-	modifyEdid(edid);
+	if (!preventManufacturerSpoof) modifyEdid(edid);
 	BYTE checksum = calculateChecksum(edid);
 	edid[127] = checksum;
 	// Setting this variable is depricated, hardcoded edid is either returned or custom in loading edid function

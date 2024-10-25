@@ -62,10 +62,10 @@
     </resolutions>
     <options>
 		<CustomEdid>false</CustomEdid> <!-- Custom Edid should be named "user_edid.bin"! This does not support emulating resolutions!-->
+		<PreventSpoof>false</PreventSpoof> <!--Enable this to prevent manufacturer spoofing when using custom edid. Please only do so if you need to!-->
 		<HardwareCursor>true</HardwareCursor>
 		<SDR10bit>false</SDR10bit>
-		<HDRPlus>false</HDRPlus>
-		<!-- If you have SDR10 bit enabled, HDRPlus wont work - there’s a conflict because the display system cannot simultaneously handle both high dynamic range 12-bit and standard dynamic range 10-bit settings. -->
+		<HDRPlus>false</HDRPlus> <!-- If you have SDR10 bit enabled, HDRPlus wont work - there’s a conflict because the display system cannot simultaneously handle both high dynamic range 12-bit and standard dynamic range 10-bit settings. -->
 		<logging>false</logging>
         <!-- DEBUG LOGGING FOR EXPERTS ONLY!-->
         <debuglogging>false</debuglogging> 
