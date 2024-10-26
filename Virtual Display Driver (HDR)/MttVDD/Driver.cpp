@@ -2382,7 +2382,7 @@ NTSTATUS VirtualDisplayDriverEvtIddCxAdapterQueryTargetInfo(
 
 	UNREFERENCED_PARAMETER(pInArgs);
 
-	pOutArgs->TargetCaps = IDDCX_TARGET_CAPS_HIGH_COLOR_SPACE;
+	pOutArgs->TargetCaps = IDDCX_TARGET_CAPS_HIGH_COLOR_SPACE | IDDCX_TARGET_CAPS_WIDE_COLOR_SPACE;
 	pOutArgs->DitheringSupport.Rgb = HDRCOLOUR;
 
 	logStream.str("");
