@@ -14,7 +14,9 @@ This project uses the official Windows Indirect Display Driver combined with the
 - [Windows 11 23H2+ (HDR)](https://github.com/itsmikethetech/Virtual-Display-Driver/releases/tag/23.12.2HDR)
 
 ## Download Beta
-- [Universal Driver - 24.10.16 (Windows 10/11)](https://github.com/itsmikethetech/Virtual-Display-Driver/releases/tag/24.10.16-beta) - Added a lot, Check release page for notes
+- [Universal Driver - 24.10.27 (Windows 10/11)](https://github.com/itsmikethetech/Virtual-Display-Driver/releases/tag/24.10.27) - Added more plus optimisations
+
+[Edid database by bud (beta only - for custom edid) ](https://edid.mikethetech.com/)
 
  
 ## Installation
