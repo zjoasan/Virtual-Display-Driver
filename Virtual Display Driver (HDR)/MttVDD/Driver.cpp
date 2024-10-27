@@ -639,7 +639,7 @@ void HandleClient(HANDLE hPipe) {
 			else if (wcsncmp(param, L"false", 5) == 0) {
 				UpdateXmlToggleSetting(false, L"logging");
 				logsEnabled = false;
-				vddlog("i", "Logging disabled");
+				vddlog("i", "Logging disabled"); // We can keep this here just to make it delete the logs on disable
 			}
 		}
 		else if (wcsncmp(buffer, L"HDRPLUS", 7) == 0) {
@@ -678,6 +678,32 @@ void HandleClient(HANDLE hPipe) {
 			else if (wcsncmp(param, L"false", 5) == 0) {
 				UpdateXmlToggleSetting(false, L"CustomEdid");
 				vddlog("i", "Custom Edid Disabled");
+				ReloadDriver(hPipe);
+			}
+		}
+		else if (wcsncmp(buffer, L"PREVENTSPOOF", 12) == 0) {
+			wchar_t* param = buffer + 13;
+			if (wcsncmp(param, L"true", 4) == 0) {
+				UpdateXmlToggleSetting(true, L"PreventSpoof");
+				vddlog("i", "Prevent Spoof Enabled");
+				ReloadDriver(hPipe);
+			}
+			else if (wcsncmp(param, L"false", 5) == 0) {
+				UpdateXmlToggleSetting(false, L"PreventSpoof");
+				vddlog("i", "Prevent Spoof Disabled");
+				ReloadDriver(hPipe);
+			}
+		}
+		else if (wcsncmp(buffer, L"CEAOVERRIDE", 11) == 0) {
+			wchar_t* param = buffer + 12;
+			if (wcsncmp(param, L"true", 4) == 0) {
+				UpdateXmlToggleSetting(true, L"EdidCeaOverride");
+				vddlog("i", "Cea override Enabled");
+				ReloadDriver(hPipe);
+			}
+			else if (wcsncmp(param, L"false", 5) == 0) {
+				UpdateXmlToggleSetting(false, L"EdidCeaOverride");
+				vddlog("i", "Cea override Disabled");
 				ReloadDriver(hPipe);
 			}
 		}
