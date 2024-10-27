@@ -92,7 +92,7 @@ UINT numVirtualDisplays;
 wstring gpuname;
 wstring confpath = L"C:\\VirtualDisplayDriver";
 bool logsEnabled = false;
-bool debugLogs;
+bool debugLogs = false;
 bool HDRPlus = false;
 bool SDR10 = false;
 bool customEdid = false;
@@ -268,8 +268,6 @@ void  SendToPipe(const std::string& logMessage) {
 
 void vddlog(const char* type, const char* message) {
 	FILE* logFile;
-	logsEnabled = EnabledQuery(L"LoggingEnabled");
-	debugLogs = EnabledQuery(L"DebugLoggingEnabled");
 	wstring logsDir = confpath + L"\\Logs";
 
 	auto now = chrono::system_clock::now();
@@ -621,11 +619,13 @@ void HandleClient(HANDLE hPipe) {
 			wchar_t* param = buffer + 10;
 			if (wcsncmp(param, L"true", 4) == 0) {
 				UpdateXmlToggleSetting(true, L"debuglogging");
+				debugLogs = true;
 				vddlog("i", "Pipe debugging enabled");
 				vddlog("d", "Debug Logs Enabled");
 			}
 			else if (wcsncmp(param, L"false", 5) == 0) {
 				UpdateXmlToggleSetting(false, L"debuglogging");
+				debugLogs = false;
 				vddlog("i", "Debugging disabled");
 			}
 		}
@@ -633,10 +633,12 @@ void HandleClient(HANDLE hPipe) {
 			wchar_t* param = buffer + 8;
 			if (wcsncmp(param, L"true", 4) == 0) {
 				UpdateXmlToggleSetting(true, L"logging");
+				logsEnabled = true;
 				vddlog("i", "Logging Enabled");
 			}
 			else if (wcsncmp(param, L"false", 5) == 0) {
 				UpdateXmlToggleSetting(false, L"logging");
+				logsEnabled = false;
 				vddlog("i", "Logging disabled");
 			}
 		}
@@ -838,7 +840,7 @@ bool initpath() {
 	if (lResult != ERROR_SUCCESS) {
 		ostringstream oss;
 		oss << "Failed to open registry key for path. Error code: " << lResult;
-		vddlog("w", oss.str().c_str());  // These are okay to call though since they're only called if the reg doesnt exist
+		//vddlog("w", oss.str().c_str());  // These are okay to call though since they're only called if the reg doesnt exist
 		return false;
 	}
 
@@ -846,7 +848,7 @@ bool initpath() {
 	if (lResult != ERROR_SUCCESS) {
 		ostringstream oss;
 		oss << "Failed to open registry key for path. Error code: " << lResult;
-		vddlog("w", oss.str().c_str());
+		//vddlog("w", oss.str().c_str()); Prevent these from being called since no longer checks before logging, only on startup whether it should
 		RegCloseKey(hKey);
 		return false;
 	}
@@ -888,6 +890,7 @@ extern "C" NTSTATUS DriverEntry(
 	Config.EvtDriverUnload = EvtDriverUnload;
 	initpath();
 	logsEnabled = EnabledQuery(L"LoggingEnabled");
+	debugLogs = EnabledQuery(L"DebugLoggingEnabled");
 	HDRPlus = EnabledQuery(L"HDRPlusEnabled");
 	SDR10 = EnabledQuery(L"SDR10Enabled");
 	HDRCOLOUR = HDRPlus ? IDDCX_BITS_PER_COMPONENT_12 : IDDCX_BITS_PER_COMPONENT_10;
