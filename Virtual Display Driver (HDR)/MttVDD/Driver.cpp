@@ -565,6 +565,225 @@ bool UpdateXmlToggleSetting(bool toggle, const wchar_t* variable) {
 }
 
 
+bool UpdateXmlGpuSetting(const wchar_t* gpuName) {
+	const std::wstring settingsname = confpath + L"\\vdd_settings.xml";
+	CComPtr<IStream> pFileStream;
+	HRESULT hr = SHCreateStreamOnFileEx(settingsname.c_str(), STGM_READWRITE, FILE_ATTRIBUTE_NORMAL, FALSE, nullptr, &pFileStream);
+	if (FAILED(hr)) {
+		vddlog("e", "UpdatingXML: XML file could not be opened.");
+		return false;
+	}
+
+	CComPtr<IXmlReader> pReader;
+	hr = CreateXmlReader(__uuidof(IXmlReader), (void**)&pReader, nullptr);
+	if (FAILED(hr)) {
+		vddlog("e", "UpdatingXML: Failed to create XML reader.");
+		return false;
+	}
+	hr = pReader->SetInput(pFileStream);
+	if (FAILED(hr)) {
+		vddlog("e", "UpdatingXML: Failed to set XML reader input.");
+		return false;
+	}
+
+	CComPtr<IStream> pOutFileStream;
+	std::wstring tempFileName = settingsname + L".temp";
+	hr = SHCreateStreamOnFileEx(tempFileName.c_str(), STGM_CREATE | STGM_WRITE, FILE_ATTRIBUTE_NORMAL, TRUE, nullptr, &pOutFileStream);
+	if (FAILED(hr)) {
+		vddlog("e", "UpdatingXML: Failed to create output file stream.");
+		return false;
+	}
+
+	CComPtr<IXmlWriter> pWriter;
+	hr = CreateXmlWriter(__uuidof(IXmlWriter), (void**)&pWriter, nullptr);
+	if (FAILED(hr)) {
+		vddlog("e", "UpdatingXML: Failed to create XML writer.");
+		return false;
+	}
+	hr = pWriter->SetOutput(pOutFileStream);
+	if (FAILED(hr)) {
+		vddlog("e", "UpdatingXML: Failed to set XML writer output.");
+		return false;
+	}
+	hr = pWriter->WriteStartDocument(XmlStandalone_Omit);
+	if (FAILED(hr)) {
+		vddlog("e", "UpdatingXML: Failed to write start of the document.");
+		return false;
+	}
+
+	XmlNodeType nodeType;
+	const wchar_t* pwszLocalName;
+	const wchar_t* pwszValue;
+	bool gpuElementFound = false;
+
+	while (S_OK == pReader->Read(&nodeType)) {
+		switch (nodeType) {
+		case XmlNodeType_Element:
+			pReader->GetLocalName(&pwszLocalName, nullptr);
+			pWriter->WriteStartElement(nullptr, pwszLocalName, nullptr);
+			break;
+
+		case XmlNodeType_EndElement:
+			pReader->GetLocalName(&pwszLocalName, nullptr);
+			pWriter->WriteEndElement();
+			break;
+
+		case XmlNodeType_Text:
+			pReader->GetValue(&pwszValue, nullptr);
+			if (gpuElementFound) {
+				pWriter->WriteString(gpuName); 
+				gpuElementFound = false;
+			}
+			else {
+				pWriter->WriteString(pwszValue);
+			}
+			break;
+
+		case XmlNodeType_Whitespace:
+			pReader->GetValue(&pwszValue, nullptr);
+			pWriter->WriteWhitespace(pwszValue);
+			break;
+
+		case XmlNodeType_Comment:
+			pReader->GetValue(&pwszValue, nullptr);
+			pWriter->WriteComment(pwszValue);
+			break;
+		}
+
+		if (nodeType == XmlNodeType_Element) {
+			pReader->GetLocalName(&pwszLocalName, nullptr);
+			if (wcscmp(pwszLocalName, L"gpu") == 0) {
+				gpuElementFound = true;
+			}
+		}
+	}
+	hr = pWriter->WriteEndDocument();
+	if (FAILED(hr)) {
+		return false;
+	}
+
+	pFileStream.Release();
+	pOutFileStream.Release();
+	pWriter.Release();
+	pReader.Release();
+
+	if (!MoveFileExW(tempFileName.c_str(), settingsname.c_str(), MOVEFILE_REPLACE_EXISTING)) {
+		return false;
+	}
+	return true;
+}
+
+bool UpdateXmlDisplayCountSetting(int displayCount) {
+	const std::wstring settingsname = confpath + L"\\vdd_settings.xml";
+	CComPtr<IStream> pFileStream;
+	HRESULT hr = SHCreateStreamOnFileEx(settingsname.c_str(), STGM_READWRITE, FILE_ATTRIBUTE_NORMAL, FALSE, nullptr, &pFileStream);
+	if (FAILED(hr)) {
+		vddlog("e", "UpdatingXML: XML file could not be opened.");
+		return false;
+	}
+
+	CComPtr<IXmlReader> pReader;
+	hr = CreateXmlReader(__uuidof(IXmlReader), (void**)&pReader, nullptr);
+	if (FAILED(hr)) {
+		vddlog("e", "UpdatingXML: Failed to create XML reader.");
+		return false;
+	}
+	hr = pReader->SetInput(pFileStream);
+	if (FAILED(hr)) {
+		vddlog("e", "UpdatingXML: Failed to set XML reader input.");
+		return false;
+	}
+
+	CComPtr<IStream> pOutFileStream;
+	std::wstring tempFileName = settingsname + L".temp";
+	hr = SHCreateStreamOnFileEx(tempFileName.c_str(), STGM_CREATE | STGM_WRITE, FILE_ATTRIBUTE_NORMAL, TRUE, nullptr, &pOutFileStream);
+	if (FAILED(hr)) {
+		vddlog("e", "UpdatingXML: Failed to create output file stream.");
+		return false;
+	}
+
+	CComPtr<IXmlWriter> pWriter;
+	hr = CreateXmlWriter(__uuidof(IXmlWriter), (void**)&pWriter, nullptr);
+	if (FAILED(hr)) {
+		vddlog("e", "UpdatingXML: Failed to create XML writer.");
+		return false;
+	}
+	hr = pWriter->SetOutput(pOutFileStream);
+	if (FAILED(hr)) {
+		vddlog("e", "UpdatingXML: Failed to set XML writer output.");
+		return false;
+	}
+	hr = pWriter->WriteStartDocument(XmlStandalone_Omit);
+	if (FAILED(hr)) {
+		vddlog("e", "UpdatingXML: Failed to write start of the document.");
+		return false;
+	}
+
+	XmlNodeType nodeType;
+	const wchar_t* pwszLocalName;
+	const wchar_t* pwszValue;
+	bool displayCountElementFound = false;
+
+	while (S_OK == pReader->Read(&nodeType)) {
+		switch (nodeType) {
+		case XmlNodeType_Element:
+			pReader->GetLocalName(&pwszLocalName, nullptr);
+			pWriter->WriteStartElement(nullptr, pwszLocalName, nullptr);
+			break;
+
+		case XmlNodeType_EndElement:
+			pReader->GetLocalName(&pwszLocalName, nullptr);
+			pWriter->WriteEndElement();
+			break;
+
+		case XmlNodeType_Text:
+			pReader->GetValue(&pwszValue, nullptr);
+			if (displayCountElementFound) {
+				pWriter->WriteString(std::to_wstring(displayCount).c_str());
+				displayCountElementFound = false; 
+			}
+			else {
+				pWriter->WriteString(pwszValue);
+			}
+			break;
+
+		case XmlNodeType_Whitespace:
+			pReader->GetValue(&pwszValue, nullptr);
+			pWriter->WriteWhitespace(pwszValue);
+			break;
+
+		case XmlNodeType_Comment:
+			pReader->GetValue(&pwszValue, nullptr);
+			pWriter->WriteComment(pwszValue);
+			break;
+		}
+
+		if (nodeType == XmlNodeType_Element) {
+			pReader->GetLocalName(&pwszLocalName, nullptr);
+			if (wcscmp(pwszLocalName, L"count") == 0) {
+				displayCountElementFound = true; 
+			}
+		}
+	}
+
+	hr = pWriter->WriteEndDocument();
+	if (FAILED(hr)) {
+		return false;
+	}
+
+	pFileStream.Release();
+	pOutFileStream.Release();
+	pWriter.Release();
+	pReader.Release();
+
+	if (!MoveFileExW(tempFileName.c_str(), settingsname.c_str(), MOVEFILE_REPLACE_EXISTING)) {
+		return false;
+	}
+	return true;
+}
+
+
+
 void GetGpuInfo()
 {
 	AdapterOption& adapterOption = Options.Adapter;
@@ -658,12 +877,12 @@ void HandleClient(HANDLE hPipe) {
 		else if (wcsncmp(buffer, L"SDR10", 5) == 0) {
 			wchar_t* param = buffer + 6;
 			if (wcsncmp(param, L"true", 4) == 0) {
-				UpdateXmlToggleSetting(true, L"SDR10");
+				UpdateXmlToggleSetting(true, L"SDR10bit");
 				vddlog("i", "SDR 10 Bit Enabled");
 				ReloadDriver(hPipe);
 			}
 			else if (wcsncmp(param, L"false", 5) == 0) {
-				UpdateXmlToggleSetting(false, L"SDR10");
+				UpdateXmlToggleSetting(false, L"SDR10bit");
 				vddlog("i", "SDR 10 Bit Disabled");
 				ReloadDriver(hPipe);
 			}
@@ -734,6 +953,40 @@ void HandleClient(HANDLE hPipe) {
 			GetGpuInfo();
 			vddlog("i", "Rerieved Assigned GPU");
 		} 
+		else if (wcsncmp(buffer, L"SETGPU", 6) == 0) {
+			std::wstring gpuName = buffer + 7;
+			gpuName = gpuName.substr(1, gpuName.size() - 2); 
+
+			int size_needed = WideCharToMultiByte(CP_UTF8, 0, gpuName.c_str(), static_cast<int>(gpuName.length()), nullptr, 0, nullptr, nullptr);
+			std::string gpuNameNarrow(size_needed, 0);
+			WideCharToMultiByte(CP_UTF8, 0, gpuName.c_str(), static_cast<int>(gpuName.length()), &gpuNameNarrow[0], size_needed, nullptr, nullptr);
+
+			vddlog("i", ("Setting GPU to: " + gpuNameNarrow).c_str());
+			if (UpdateXmlGpuSetting(gpuName.c_str())) {
+				vddlog("i", "Gpu Changed, Restarting Driver");
+			}
+			else {
+				vddlog("e", "Failed to update GPU setting in XML. Restarting anyway");
+			}
+			ReloadDriver(hPipe);
+		}
+		else if (wcsncmp(buffer, L"SETDISPLAYCOUNT", 15) == 0) {
+			vddlog("i", "Setting Display Count");
+
+			int newDisplayCount = 1;
+			swscanf_s(buffer + 15, L"%d", &newDisplayCount);
+
+			std::wstring displayLog = L"Setting display count  to " + std::to_wstring(newDisplayCount);
+			vddlog("i", WStringToString(displayLog).c_str());
+
+			if (UpdateXmlDisplayCountSetting(newDisplayCount)){
+				vddlog("i", "Display Count Changed, Restarting Driver");
+			}
+			else {
+				vddlog("e", "Failed to update display count setting in XML. Restarting anyway");
+			}
+			ReloadDriver(hPipe);
+		}
 		else if (wcsncmp(buffer, L"GETSETTINGS", 11) == 0) {
 			//query and return settings
 			bool debugEnabled = EnabledQuery(L"DebugLoggingEnabled");
@@ -1051,91 +1304,97 @@ void loadSettings() {
 	const wstring optionsname = confpath + L"\\option.txt";
 	ifstream ifs(optionsname);
 	if (ifs.is_open()) {
-		string line;
-		vector<tuple<int, int, int, int>> res; 
-		getline(ifs, line);
-		numVirtualDisplays = stoi(line);
-		while (getline(ifs, line)) {
-			vector<string> strvec = split(line, ',');
-			if (strvec.size() == 3 && strvec[0].substr(0, 1) != "#") {
-				int vsync_num, vsync_den;
-				float_to_vsync(stof(strvec[2]), vsync_num, vsync_den); 
-				res.push_back({ stoi(strvec[0]), stoi(strvec[1]), vsync_num, vsync_den });
-			}
-		}
-		vddlog("i", "Using option.txt");
-		monitorModes = res;
-		for (const auto& mode : res) {
-			int width, height, vsync_num, vsync_den;
-			tie(width, height, vsync_num, vsync_den) = mode;
-			stringstream ss;
-			ss << "Resolution: " << width << "x" << height << " @ " << vsync_num << "/" << vsync_den << "Hz";
-			vddlog("d", ss.str().c_str());
-		}
+    string line;
+    if (getline(ifs, line) && !line.empty()) {
+        numVirtualDisplays = stoi(line);
+        vector<tuple<int, int, int, int>> res; 
+
+        while (getline(ifs, line)) {
+            vector<string> strvec = split(line, ',');
+            if (strvec.size() == 3 && strvec[0].substr(0, 1) != "#") {
+                int vsync_num, vsync_den;
+                float_to_vsync(stof(strvec[2]), vsync_num, vsync_den); 
+                res.push_back({ stoi(strvec[0]), stoi(strvec[1]), vsync_num, vsync_den });
+            }
+        }
+
+        vddlog("i", "Using option.txt");
+        monitorModes = res;
+        for (const auto& mode : res) {
+            int width, height, vsync_num, vsync_den;
+            tie(width, height, vsync_num, vsync_den) = mode;
+            stringstream ss;
+            ss << "Resolution: " << width << "x" << height << " @ " << vsync_num << "/" << vsync_den << "Hz";
+            vddlog("d", ss.str().c_str());
+        }
 		return;
-	}
-	else {
-		numVirtualDisplays = 1;
-		vector<tuple<int, int, int, int>> res;
-		vector<tuple<int, int, float>> fallbackRes = {
-			{800, 600, 30.0f},
-			{800, 600, 60.0f},
-			{800, 600, 90.0f},
-			{800, 600, 120.0f},
-			{800, 600, 144.0f},
-			{800, 600, 165.0f},
-			{1280, 720, 30.0f},
-			{1280, 720, 60.0f},
-			{1280, 720, 90.0f},
-			{1280, 720, 130.0f},
-			{1280, 720, 144.0f},
-			{1280, 720, 165.0f},
-			{1366, 768, 30.0f},
-			{1366, 768, 60.0f},
-			{1366, 768, 90.0f},
-			{1366, 768, 120.0f},
-			{1366, 768, 144.0f},
-			{1366, 768, 165.0f},
-			{1920, 1080, 30.0f},
-			{1920, 1080, 60.0f},
-			{1920, 1080, 90.0f},
-			{1920, 1080, 120.0f},
-			{1920, 1080, 144.0f},
-			{1920, 1080, 165.0f},
-			{2560, 1440, 30.0f},
-			{2560, 1440, 60.0f},
-			{2560, 1440, 90.0f},
-			{2560, 1440, 120.0f},
-			{2560, 1440, 144.0f},
-			{2560, 1440, 165.0f},
-			{3840, 2160, 30.0f},
-			{3840, 2160, 60.0f},
-			{3840, 2160, 90.0f},
-			{3840, 2160, 120.0f},
-			{3840, 2160, 144.0f},
-			{3840, 2160, 165.0f}
-		};
+    } else {
+        vddlog("w", "option.txt is empty or the first line is invalid. Enabling Fallback");
+    }
+}
 
-		vddlog("i", "Loading Fallback - no settings found");
 
-		for (const auto& mode : fallbackRes) {
-			int width, height;
-			float refreshRate;
-			tie(width, height, refreshRate) = mode;
+	numVirtualDisplays = 1;
+	vector<tuple<int, int, int, int>> res;
+	vector<tuple<int, int, float>> fallbackRes = {
+		{800, 600, 30.0f},
+		{800, 600, 60.0f},
+		{800, 600, 90.0f},
+		{800, 600, 120.0f},
+		{800, 600, 144.0f},
+		{800, 600, 165.0f},
+		{1280, 720, 30.0f},
+		{1280, 720, 60.0f},
+		{1280, 720, 90.0f},
+		{1280, 720, 130.0f},
+		{1280, 720, 144.0f},
+		{1280, 720, 165.0f},
+		{1366, 768, 30.0f},
+		{1366, 768, 60.0f},
+		{1366, 768, 90.0f},
+		{1366, 768, 120.0f},
+		{1366, 768, 144.0f},
+		{1366, 768, 165.0f},
+		{1920, 1080, 30.0f},
+		{1920, 1080, 60.0f},
+		{1920, 1080, 90.0f},
+		{1920, 1080, 120.0f},
+		{1920, 1080, 144.0f},
+		{1920, 1080, 165.0f},
+		{2560, 1440, 30.0f},
+		{2560, 1440, 60.0f},
+		{2560, 1440, 90.0f},
+		{2560, 1440, 120.0f},
+		{2560, 1440, 144.0f},
+		{2560, 1440, 165.0f},
+		{3840, 2160, 30.0f},
+		{3840, 2160, 60.0f},
+		{3840, 2160, 90.0f},
+		{3840, 2160, 120.0f},
+		{3840, 2160, 144.0f},
+		{3840, 2160, 165.0f}
+	};
 
-			int vsync_num, vsync_den;
-			float_to_vsync(refreshRate, vsync_num, vsync_den);
+	vddlog("i", "Loading Fallback - no settings found");
 
-			res.push_back(make_tuple(width, height, vsync_num, vsync_den));
+	for (const auto& mode : fallbackRes) {
+		int width, height;
+		float refreshRate;
+		tie(width, height, refreshRate) = mode;
+
+		int vsync_num, vsync_den;
+		float_to_vsync(refreshRate, vsync_num, vsync_den);
 
 			stringstream ss;
-			ss << "Resolution: " << width << "x" << height << " @ " << vsync_num << "/" << vsync_den << "Hz";
-			vddlog("d", ss.str().c_str());
-		}
+		res.push_back(make_tuple(width, height, vsync_num, vsync_den));
 
-		monitorModes = res;
-		return;
+		stringstream ss;
+		ss << "Resolution: " << width << "x" << height << " @ " << vsync_num << "/" << vsync_den << "Hz";
+		vddlog("d", ss.str().c_str());
 	}
+
+	monitorModes = res;
+	return;
 
 }
 
