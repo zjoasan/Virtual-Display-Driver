@@ -104,6 +104,8 @@ Shoutout to **[Anakngtokwa](https://github.com/Anakngtokwa)** for assisting with
 
 Thanks to **[AKATrevorJay](https://github.com/akatrevorjay/edid-generator)** for the hi-res EDID.
 
+Shoutout to **[LexTrack](https://github.com/lextrack/)** for the MiniScreenRecorder script. 
+
 ## Star History
 
 [![Star History Chart](https://api.star-history.com/svg?repos=itsmikethetech/Virtual-Display-Driver&type=Date)](https://star-history.com/#itsmikethetech/Virtual-Display-Driver&Date)
