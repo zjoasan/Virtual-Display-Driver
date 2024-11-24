@@ -114,15 +114,22 @@ class ScreenRecorderApp:
                         frame_width = self.preview_frame.winfo_width()
                         frame_height = self.preview_frame.winfo_height()
 
-                        # Resize based on current window size
                         if frame_width > 0 and frame_height > 0:
-                            screenshot = cv2.resize(screenshot, (frame_width, frame_height), interpolation=cv2.INTER_AREA)
+                            # Calculate aspect-ratio-preserving dimensions
+                            height, width, _ = screenshot.shape
+                            scale = min(frame_width / width, frame_height / height)
+                            new_width = int(width * scale)
+                            new_height = int(height * scale)
+
+                            # Resize screenshot while preserving aspect ratio
+                            screenshot = cv2.resize(screenshot, (new_width, new_height), interpolation=cv2.INTER_AREA)
 
                         tk_image = ImageTk.PhotoImage(image=Image.fromarray(screenshot))
                         self.root.after(0, self._update_preview_label, tk_image)
                     time.sleep(0.03)
                 except tk.TclError:
                     break
+
 
     def _update_preview_label(self, tk_image):
         if self.preview_running:
