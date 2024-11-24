@@ -24,7 +24,7 @@ logger = setup_logging()
 class ScreenRecorderApp:
     def __init__(self, root):
         self.root = root
-        self.initialize_ffmpeg()
+        # self.initialize_ffmpeg()
         logger.info("THE APP WAS OPEN")
 
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
@@ -34,11 +34,17 @@ class ScreenRecorderApp:
         self.config_file = 'config.ini'
         self.load_config()
 
-        self.audio_manager = AudioManager()
-        self.audio_devices = self.audio_manager.audio_devices
-        if len(self.audio_devices) == 0:
-            messagebox.showerror("Error", "No audio devices.")
-            return
+        try:
+            self.audio_manager = AudioManager()
+            self.audio_devices = self.audio_manager.audio_devices
+            if len(self.audio_devices) == 0:
+                logger.warning("No audio devices found. Proceeding without audio.")
+                self.audio_devices = []  # Allow the app to continue without audio
+        except Exception as e:
+            logger.error(f"AudioManager initialization failed: {e}")
+            self.audio_manager = None
+            self.audio_devices = []
+
 
         self.monitors = self.get_monitors()
         if len(self.monitors) == 0:
@@ -49,7 +55,7 @@ class ScreenRecorderApp:
 
         self.init_ui()
 
-        self.create_output_folder()
+        # self.create_output_folder()
         self.recording_process = None
         self.running = False
         self.elapsed_time = 0
@@ -65,11 +71,7 @@ class ScreenRecorderApp:
         self.root.bind("<Configure>", self.resize_preview)
 
     def set_icon(self):
-        if platform.system() == 'Windows':
-            self.root.iconbitmap('video.ico')
-        elif platform.system() == 'Linux':
-            icon = tk.PhotoImage(file='video.png')
-            self.root.iconphoto(True, icon)
+        self.root.iconbitmap('video.ico')
 
     def load_config(self):
         if os.path.exists(self.config_file):
@@ -158,19 +160,19 @@ class ScreenRecorderApp:
     def get_monitors(self):
         return get_monitors()
 
-    def initialize_ffmpeg(self):
-        ffmpeg_path = self.get_ffmpeg_path()
-        if not os.path.exists(ffmpeg_path):
-            logger.error("FFmpeg not found.")
-            messagebox.showerror("Error", "FFmpeg not found.")
-            sys.exit(1)
-        logger.info("FFmpeg was found.")
+    # def initialize_ffmpeg(self):
+    #     ffmpeg_path = self.get_ffmpeg_path()
+    #     if not os.path.exists(ffmpeg_path):
+    #         logger.error("FFmpeg not found.")
+    #         messagebox.showerror("Error", "FFmpeg not found.")
+    #         sys.exit(1)
+    #     logger.info("FFmpeg was found.")
 
-    def get_ffmpeg_path(self):
-        base_path = os.path.dirname(os.path.abspath(__file__))
-        if platform.system() == 'Windows':
-            return os.path.join(base_path, 'ffmpeg_files', 'ffmpeg.exe')
-        return os.path.join(base_path, 'ffmpeg_files', 'ffmpeg')
+    # def get_ffmpeg_path(self):
+    #     base_path = os.path.dirname(os.path.abspath(__file__))
+    #     if platform.system() == 'Windows':
+    #         return os.path.join(base_path, 'ffmpeg_files', 'ffmpeg.exe')
+    #     return os.path.join(base_path, 'ffmpeg_files', 'ffmpeg')
 
 
 if __name__ == "__main__":
