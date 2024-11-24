@@ -1,12 +1,7 @@
-#WINDOWS
-
-import platform
-import sys
 import tkinter as tk
 from tkinter import ttk, messagebox
 import threading
 import os
-import subprocess
 import time
 import mss
 import numpy as np
@@ -24,7 +19,7 @@ logger = setup_logging()
 class ScreenRecorderApp:
     def __init__(self, root):
         self.root = root
-        # self.initialize_ffmpeg()
+
         logger.info("THE APP WAS OPEN")
 
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
@@ -55,7 +50,6 @@ class ScreenRecorderApp:
 
         self.init_ui()
 
-        # self.create_output_folder()
         self.recording_process = None
         self.running = False
         self.elapsed_time = 0
@@ -159,21 +153,6 @@ class ScreenRecorderApp:
 
     def get_monitors(self):
         return get_monitors()
-
-    # def initialize_ffmpeg(self):
-    #     ffmpeg_path = self.get_ffmpeg_path()
-    #     if not os.path.exists(ffmpeg_path):
-    #         logger.error("FFmpeg not found.")
-    #         messagebox.showerror("Error", "FFmpeg not found.")
-    #         sys.exit(1)
-    #     logger.info("FFmpeg was found.")
-
-    # def get_ffmpeg_path(self):
-    #     base_path = os.path.dirname(os.path.abspath(__file__))
-    #     if platform.system() == 'Windows':
-    #         return os.path.join(base_path, 'ffmpeg_files', 'ffmpeg.exe')
-    #     return os.path.join(base_path, 'ffmpeg_files', 'ffmpeg')
-
 
 if __name__ == "__main__":
     try:
