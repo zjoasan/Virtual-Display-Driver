@@ -110,5 +110,5 @@ Shoutout to **[LexTrack](https://github.com/lextrack/)** for the MiniScreenRecor
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=itsmikethetech/Virtual-Display-Driver&type=Date)](https://star-history.com/#itsmikethetech/Virtual-Display-Driver&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=VirtualDisplay/Virtual-Display-Driver&type=Date)](https://star-history.com/#VirtualDisplay/Virtual-Display-Driver&Date)
 
