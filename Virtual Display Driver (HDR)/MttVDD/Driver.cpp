@@ -783,6 +783,16 @@ bool UpdateXmlDisplayCountSetting(int displayCount) {
 }
 
 
+LUID getSetAdapterLuid() {
+	AdapterOption& adapterOption = Options.Adapter;
+
+	if (!adapterOption.hasTargetAdapter) {
+		vddlog("e","No Gpu Found/Selected");
+	}
+
+	return adapterOption.adapterLuid;
+}
+
 
 void GetGpuInfo()
 {
@@ -793,18 +803,18 @@ void GetGpuInfo()
 		return;
 	}
 
-	string utf8_desc;
 	try {
-		utf8_desc = WStringToString(adapterOption.target_name);
+		string utf8_desc = WStringToString(adapterOption.target_name);
+		LUID luid = getSetAdapterLuid();
+		string logtext = "ASSIGNED GPU: " + utf8_desc +
+			" (LUID: " + std::to_string(luid.LowPart) + "-" + std::to_string(luid.HighPart) + ")";
+		vddlog("i", logtext.c_str());
 	}
 	catch (const exception& e) {
-		vddlog("e", ("Conversion error: " + string(e.what())).c_str());
-		return;
+		vddlog("e", ("Error: " + string(e.what())).c_str());
 	}
-
-	string logtext = "ASSIGNED GPU: " + utf8_desc;
-	vddlog("i", logtext.c_str());
 }
+
 
 
 void ReloadDriver(HANDLE hPipe) {
@@ -942,7 +952,7 @@ void HandleClient(HANDLE hPipe) {
 		else if (wcsncmp(buffer, L"D3DDEVICEGPU", 12) == 0) {
 			vddlog("i", "Retrieving D3D GPU (This information may be inaccurate without reloading the driver first)");
 			InitializeD3DDeviceAndLogGPU();
-			vddlog("i", "Rerieved D3D GPU");
+			vddlog("i", "Retrieved D3D GPU");
 		}
 		else if (wcsncmp(buffer, L"IDDCXVERSION", 12) == 0) {
 			vddlog("i", "Logging iddcx version");
@@ -951,7 +961,7 @@ void HandleClient(HANDLE hPipe) {
 		else if (wcsncmp(buffer, L"GETASSIGNEDGPU", 14) == 0) {
 			vddlog("i", "Retrieving Assigned GPU");
 			GetGpuInfo();
-			vddlog("i", "Rerieved Assigned GPU");
+			vddlog("i", "Retrieved Assigned GPU");
 		} 
 		else if (wcsncmp(buffer, L"SETGPU", 6) == 0) {
 			std::wstring gpuName = buffer + 7;
@@ -1385,10 +1395,10 @@ void loadSettings() {
 		int vsync_num, vsync_den;
 		float_to_vsync(refreshRate, vsync_num, vsync_den);
 
-			stringstream ss;
+		stringstream ss;
 		res.push_back(make_tuple(width, height, vsync_num, vsync_den));
 
-		stringstream ss;
+
 		ss << "Resolution: " << width << "x" << height << " @ " << vsync_num << "/" << vsync_den << "Hz";
 		vddlog("d", ss.str().c_str());
 	}
