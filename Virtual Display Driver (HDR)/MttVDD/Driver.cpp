@@ -332,6 +332,9 @@ void vddlog(const char* type, const char* message) {
 		case 't':
 			logType = "TESTING";
 			break;
+		case 'c':
+			logType = "COMPANION";
+			break;
 		default:
 			logType = "UNKNOWN";
 			break;
@@ -815,6 +818,41 @@ void GetGpuInfo()
 	}
 }
 
+void logAvailableGPUs() {
+	vector<GPUInfo> gpus;
+	ComPtr<IDXGIFactory1> factory;
+	if (!SUCCEEDED(CreateDXGIFactory1(IID_PPV_ARGS(&factory)))) {
+		return;
+	}
+	for (UINT i = 0;; i++) {
+		ComPtr<IDXGIAdapter> adapter;
+		if (!SUCCEEDED(factory->EnumAdapters(i, &adapter))) {
+			break;
+		}
+		DXGI_ADAPTER_DESC desc;
+		if (!SUCCEEDED(adapter->GetDesc(&desc))) {
+			continue;
+		}
+		GPUInfo info{ desc.Description, adapter, desc };
+		gpus.push_back(info);
+	}
+	for (const auto& gpu : gpus) {
+		wstring logMessage = L"GPU Name: ";
+		logMessage += gpu.desc.Description;
+		wstring memorySize = L" Memory: ";
+		memorySize += std::to_wstring(gpu.desc.DedicatedVideoMemory / (1024 * 1024)) + L" MB";
+		wstring logText = logMessage + memorySize;
+		int bufferSize = WideCharToMultiByte(CP_UTF8, 0, logText.c_str(), -1, nullptr, 0, nullptr, nullptr);
+		if (bufferSize > 0) {
+			std::string logTextA(bufferSize - 1, '\0');
+			WideCharToMultiByte(CP_UTF8, 0, logText.c_str(), -1, &logTextA[0], bufferSize, nullptr, nullptr);
+			vddlog("c", logTextA.c_str());
+		}
+	}
+}
+
+
+
 
 
 void ReloadDriver(HANDLE hPipe) {
@@ -840,7 +878,7 @@ void HandleClient(HANDLE hPipe) {
 		WideCharToMultiByte(CP_UTF8, 0, bufferwstr.c_str(), -1, &bufferstr[0], bufferSize, nullptr, nullptr);
 		vddlog("p", bufferstr.c_str());
 		if (wcsncmp(buffer, L"RELOAD_DRIVER", 13) == 0) {
-			vddlog("i", "Reloading the driver");
+			vddlog("c", "Reloading the driver");
 			ReloadDriver(hPipe);
 			
 		}
@@ -849,13 +887,13 @@ void HandleClient(HANDLE hPipe) {
 			if (wcsncmp(param, L"true", 4) == 0) {
 				UpdateXmlToggleSetting(true, L"debuglogging");
 				debugLogs = true;
-				vddlog("i", "Pipe debugging enabled");
+				vddlog("c", "Pipe debugging enabled");
 				vddlog("d", "Debug Logs Enabled");
 			}
 			else if (wcsncmp(param, L"false", 5) == 0) {
 				UpdateXmlToggleSetting(false, L"debuglogging");
 				debugLogs = false;
-				vddlog("i", "Debugging disabled");
+				vddlog("c", "Debugging disabled");
 			}
 		}
 		else if (wcsncmp(buffer, L"LOGGING", 7) == 0) {
@@ -863,24 +901,24 @@ void HandleClient(HANDLE hPipe) {
 			if (wcsncmp(param, L"true", 4) == 0) {
 				UpdateXmlToggleSetting(true, L"logging");
 				logsEnabled = true;
-				vddlog("i", "Logging Enabled");
+				vddlog("c", "Logging Enabled");
 			}
 			else if (wcsncmp(param, L"false", 5) == 0) {
 				UpdateXmlToggleSetting(false, L"logging");
 				logsEnabled = false;
-				vddlog("i", "Logging disabled"); // We can keep this here just to make it delete the logs on disable
+				vddlog("c", "Logging disabled"); // We can keep this here just to make it delete the logs on disable
 			}
 		}
 		else if (wcsncmp(buffer, L"HDRPLUS", 7) == 0) {
 			wchar_t* param = buffer + 8;
 			if (wcsncmp(param, L"true", 4) == 0) {
 				UpdateXmlToggleSetting(true, L"HDRPlus");
-				vddlog("i", "HDR+ Enabled"); 
+				vddlog("c", "HDR+ Enabled"); 
 				ReloadDriver(hPipe);
 			} 
 			else if (wcsncmp(param, L"false", 5) == 0) {
 				UpdateXmlToggleSetting(false, L"HDRPlus");
-				vddlog("i", "HDR+ Disabled");
+				vddlog("c", "HDR+ Disabled");
 				ReloadDriver(hPipe);
 			}
 		}
@@ -888,12 +926,12 @@ void HandleClient(HANDLE hPipe) {
 			wchar_t* param = buffer + 6;
 			if (wcsncmp(param, L"true", 4) == 0) {
 				UpdateXmlToggleSetting(true, L"SDR10bit");
-				vddlog("i", "SDR 10 Bit Enabled");
+				vddlog("c", "SDR 10 Bit Enabled");
 				ReloadDriver(hPipe);
 			}
 			else if (wcsncmp(param, L"false", 5) == 0) {
 				UpdateXmlToggleSetting(false, L"SDR10bit");
-				vddlog("i", "SDR 10 Bit Disabled");
+				vddlog("c", "SDR 10 Bit Disabled");
 				ReloadDriver(hPipe);
 			}
 		}
@@ -901,12 +939,12 @@ void HandleClient(HANDLE hPipe) {
 			wchar_t* param = buffer + 11;
 			if (wcsncmp(param, L"true", 4) == 0) {
 				UpdateXmlToggleSetting(true, L"CustomEdid");
-				vddlog("i", "Custom Edid Enabled");
+				vddlog("c", "Custom Edid Enabled");
 				ReloadDriver(hPipe);
 			}
 			else if (wcsncmp(param, L"false", 5) == 0) {
 				UpdateXmlToggleSetting(false, L"CustomEdid");
-				vddlog("i", "Custom Edid Disabled");
+				vddlog("c", "Custom Edid Disabled");
 				ReloadDriver(hPipe);
 			}
 		}
@@ -914,12 +952,12 @@ void HandleClient(HANDLE hPipe) {
 			wchar_t* param = buffer + 13;
 			if (wcsncmp(param, L"true", 4) == 0) {
 				UpdateXmlToggleSetting(true, L"PreventSpoof");
-				vddlog("i", "Prevent Spoof Enabled");
+				vddlog("c", "Prevent Spoof Enabled");
 				ReloadDriver(hPipe);
 			}
 			else if (wcsncmp(param, L"false", 5) == 0) {
 				UpdateXmlToggleSetting(false, L"PreventSpoof");
-				vddlog("i", "Prevent Spoof Disabled");
+				vddlog("c", "Prevent Spoof Disabled");
 				ReloadDriver(hPipe);
 			}
 		}
@@ -927,12 +965,12 @@ void HandleClient(HANDLE hPipe) {
 			wchar_t* param = buffer + 12;
 			if (wcsncmp(param, L"true", 4) == 0) {
 				UpdateXmlToggleSetting(true, L"EdidCeaOverride");
-				vddlog("i", "Cea override Enabled");
+				vddlog("c", "Cea override Enabled");
 				ReloadDriver(hPipe);
 			}
 			else if (wcsncmp(param, L"false", 5) == 0) {
 				UpdateXmlToggleSetting(false, L"EdidCeaOverride");
-				vddlog("i", "Cea override Disabled");
+				vddlog("c", "Cea override Disabled");
 				ReloadDriver(hPipe);
 			}
 		}
@@ -940,29 +978,35 @@ void HandleClient(HANDLE hPipe) {
 			wchar_t* param = buffer + 15;
 			if (wcsncmp(param, L"true", 4) == 0) {
 				UpdateXmlToggleSetting(true, L"HardwareCursor");
-				vddlog("i", "Hardware Cursor Enabled");
+				vddlog("c", "Hardware Cursor Enabled");
 				ReloadDriver(hPipe);
 			}
 			else if (wcsncmp(param, L"false", 5) == 0) {
 				UpdateXmlToggleSetting(false, L"HardwareCursor");
-				vddlog("i", "Hardware Cursor Disabled");
+				vddlog("c", "Hardware Cursor Disabled");
 				ReloadDriver(hPipe);
 			}
 		}
 		else if (wcsncmp(buffer, L"D3DDEVICEGPU", 12) == 0) {
-			vddlog("i", "Retrieving D3D GPU (This information may be inaccurate without reloading the driver first)");
+			vddlog("c", "Retrieving D3D GPU (This information may be inaccurate without reloading the driver first)");
 			InitializeD3DDeviceAndLogGPU();
-			vddlog("i", "Retrieved D3D GPU");
+			vddlog("c", "Retrieved D3D GPU");
 		}
 		else if (wcsncmp(buffer, L"IDDCXVERSION", 12) == 0) {
-			vddlog("i", "Logging iddcx version");
+			vddlog("c", "Logging iddcx version");
 			LogIddCxVersion(); 
 		}
 		else if (wcsncmp(buffer, L"GETASSIGNEDGPU", 14) == 0) {
-			vddlog("i", "Retrieving Assigned GPU");
+			vddlog("c", "Retrieving Assigned GPU");
 			GetGpuInfo();
-			vddlog("i", "Retrieved Assigned GPU");
-		} 
+			vddlog("c", "Retrieved Assigned GPU");
+		}
+		else if (wcsncmp(buffer, L"GETALLGPUS", 10) == 0) {
+			vddlog("c", "Logging all GPUs");
+			vddlog("i", "Any GPUs which show twice but you only have one, will most likely be the GPU the driver is attached to");
+			logAvailableGPUs();
+			vddlog("c", "Logged all GPUs");
+		}  
 		else if (wcsncmp(buffer, L"SETGPU", 6) == 0) {
 			std::wstring gpuName = buffer + 7;
 			gpuName = gpuName.substr(1, gpuName.size() - 2); 
@@ -971,9 +1015,9 @@ void HandleClient(HANDLE hPipe) {
 			std::string gpuNameNarrow(size_needed, 0);
 			WideCharToMultiByte(CP_UTF8, 0, gpuName.c_str(), static_cast<int>(gpuName.length()), &gpuNameNarrow[0], size_needed, nullptr, nullptr);
 
-			vddlog("i", ("Setting GPU to: " + gpuNameNarrow).c_str());
+			vddlog("c", ("Setting GPU to: " + gpuNameNarrow).c_str());
 			if (UpdateXmlGpuSetting(gpuName.c_str())) {
-				vddlog("i", "Gpu Changed, Restarting Driver");
+				vddlog("c", "Gpu Changed, Restarting Driver");
 			}
 			else {
 				vddlog("e", "Failed to update GPU setting in XML. Restarting anyway");
@@ -987,10 +1031,10 @@ void HandleClient(HANDLE hPipe) {
 			swscanf_s(buffer + 15, L"%d", &newDisplayCount);
 
 			std::wstring displayLog = L"Setting display count  to " + std::to_wstring(newDisplayCount);
-			vddlog("i", WStringToString(displayLog).c_str());
+			vddlog("c", WStringToString(displayLog).c_str());
 
 			if (UpdateXmlDisplayCountSetting(newDisplayCount)){
-				vddlog("i", "Display Count Changed, Restarting Driver");
+				vddlog("c", "Display Count Changed, Restarting Driver");
 			}
 			else {
 				vddlog("e", "Failed to update display count setting in XML. Restarting anyway");
