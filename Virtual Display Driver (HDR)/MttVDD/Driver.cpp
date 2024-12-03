@@ -38,6 +38,7 @@ Environment:
 #include <string>
 #include <cstdlib>
 #include <map>
+#include <set>
 
 
 
@@ -1295,6 +1296,8 @@ void loadSettings() {
 		vector<tuple<int, int, int, int>> res;
 		wstring gpuFriendlyName;
 		UINT monitorcount = 1;
+		set<tuple<int, int>> resolutions;
+		vector<int> globalRefreshRates;
 
 		while (S_OK == (hr = pReader->Read(&nodeType))) {
 			switch (nodeType) {
@@ -1331,6 +1334,7 @@ void loadSettings() {
 					if (height.empty()) {
 						height = L"600";
 					}
+					resolutions.insert(make_tuple(stoi(width), stoi(height)));
 				}
 				else if (currentElement == L"refresh_rate") {
 					refreshRate = wstring(pwszValue, cwchValue);
@@ -1345,9 +1349,56 @@ void loadSettings() {
 					ss << "Added: " << stoi(width) << "x" << stoi(height) << " @ " << vsync_num << "/" << vsync_den << "Hz";
 					vddlog("d", ss.str().c_str());
 				}
+				else if (currentElement == L"g_refresh_rate") {
+					globalRefreshRates.push_back(stoi(wstring(pwszValue, cwchValue)));
+				}
 				break;
 			}
 		}
+
+		/*
+		* This is for res testing, stores each resolution then iterates through each global adding a res for each one
+		* 
+		
+		for (const auto& resTuple : resolutions) {
+			stringstream ss;
+			ss << get<0>(resTuple) << "x" << get<1>(resTuple);
+			vddlog("t", ss.str().c_str());
+		}
+
+		for (const auto& globalRate : globalRefreshRates) {
+			stringstream ss;
+			ss << globalRate << " Hz";
+			vddlog("t", ss.str().c_str());
+		}
+		*/
+
+		for (int globalRate : globalRefreshRates) {
+			for (const auto& resTuple : resolutions) {
+				int global_width = get<0>(resTuple);
+				int global_height = get<1>(resTuple);
+
+				int vsync_num, vsync_den;
+				float_to_vsync(static_cast<float>(globalRate), vsync_num, vsync_den);
+				res.push_back(make_tuple(global_width, global_height, vsync_num, vsync_den));
+			}
+		}
+
+		/*
+		* logging all resolutions after added global
+		* 
+		for (const auto& tup : res) {
+			stringstream ss;
+			ss << "("
+				<< get<0>(tup) << ", "
+				<< get<1>(tup) << ", "
+				<< get<2>(tup) << ", "
+				<< get<3>(tup) << ")";
+			vddlog("t", ss.str().c_str());
+		}
+		
+		*/
+
 
 		numVirtualDisplays = monitorcount;
 		gpuname = gpuFriendlyName;
