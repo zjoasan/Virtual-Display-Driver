@@ -92,7 +92,7 @@ This software is provided "AS IS" with NO IMPLICIT OR EXPLICIT warranty. It's wo
 
 ## Acknowledgements
 
-Shoutout to **[MikeTheTech](https://github.com/itsmiktehtech)** Project Boss man, owner and programmer!
+Shoutout to **[MikeTheTech](https://github.com/itsmikethetech)** Project Boss man, owner and programmer!
 
 Shoutout to **[Bud](https://github.com/bud3699)** and **[zjoasan](https://github.com/zjoasan)** for jumping on the team and helping with not just support, but lots of great new features!
 
