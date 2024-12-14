@@ -2,13 +2,16 @@ name: Virtual Display Driver Building
 
 on:
   workflow_dispatch:
+  push:
+    branches: 
+      - main 
 
 jobs:
   build:
     runs-on: windows-latest
     strategy:
       matrix:
-        configuration: [Release]
+        configuration: [Debug, Release]
         platform: [x64, ARM64]
     steps:
       - name: Checkout code
