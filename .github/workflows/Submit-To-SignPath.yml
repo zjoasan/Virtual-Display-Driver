@@ -75,3 +75,21 @@ jobs:
 
       - name: Verify Signed Artifacts
         run: dir 'SignedArtifacts'
+
+      - name: Upload signed artifacts
+        id: upload_signed_artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Signed-Driver-${{ matrix.configuration }}-${{ matrix.platform }}
+          path: |
+            SignedArtifacts\MttVDD.dll
+            SignedArtifacts\MttVDD.inf
+            SignedArtifacts\mttvdd.cat
+            SignedArtifacts\vdd_settings.xml
+            
+  celebrate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Celebrate
+        run: |
+          echo "Bud is a god, also hi if you're looking at this!"
