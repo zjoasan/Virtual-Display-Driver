@@ -1,5 +1,4 @@
-name: Virtual Display Driver Building
-
+name: Virtual Display Driver Signpath Request
 on:
   workflow_dispatch:
 
