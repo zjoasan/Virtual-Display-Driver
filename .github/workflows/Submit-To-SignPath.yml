@@ -70,7 +70,7 @@ jobs:
           wait-for-completion: true
           output-artifact-directory: 'SignedArtifacts'
           parameters: |
-            Version: ${{ matrix.configuration }}
+            Version: ${{ toJSON(matrix.configuration) }}
             Release_Tag: "${{ env.RELEASE_TAG }}"
 
       - name: Verify Signed Artifacts
