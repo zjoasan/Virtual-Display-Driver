@@ -1,0 +1,78 @@
+name: Virtual Display Driver Building
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        configuration: [Release]
+        platform: [x64, ARM64]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v1
+
+      - name: Check Chocolatey installation
+        run: choco --version
+
+      - name: Install Visual Studio 2022 dependencies
+        run: |
+          choco install visualstudio2022-workload-manageddesktop -y || exit 1
+          choco install visualstudio2022-workload-nativedesktop -y || exit 1
+          choco install visualstudio2022-workload-vctools -y || exit 1
+          choco install windowsdriverkit11 -y || exit 1
+
+      - name: Build the driver
+        run: |
+          msbuild "Virtual Display Driver (HDR)/MTTVDD.sln" /p:Configuration=${{ matrix.configuration }} /p:Platform=${{ matrix.platform }}
+
+      - name: List build directory
+        run: dir "Virtual Display Driver (HDR)\${{ matrix.platform }}\${{ matrix.configuration }}\MttVDD"
+
+      - name: Upload built driver
+        id: upload_artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Built-Driver-${{ matrix.configuration }}-${{ matrix.platform }}
+          path: |
+            Virtual Display Driver (HDR)\${{ matrix.platform }}\${{ matrix.configuration }}\MttVDD\MttVDD.dll
+            Virtual Display Driver (HDR)\${{ matrix.platform }}\${{ matrix.configuration }}\MttVDD\MttVDD.inf
+            Virtual Display Driver (HDR)\${{ matrix.platform }}\${{ matrix.configuration }}\MttVDD\mttvdd.cat
+            Virtual Display Driver (HDR)\${{ matrix.platform }}\${{ matrix.configuration }}\MttVDD\vdd_settings.xml
+
+      - name: Generate release tag
+        id: generate_tag
+        run: |
+          $releaseTag = (Get-Date).ToString('yy.MM.dd')
+          echo "RELEASE_TAG=$releaseTag" >> $env:GITHUB_ENV
+
+      - name: Show generated release tag
+        run: |
+          echo "Generated Release Tag: ${{ env.RELEASE_TAG }}"
+            
+      - name: Verify Built Artifacts
+        run: dir 'Virtual Display Driver (HDR)\${{ matrix.platform }}\${{ matrix.configuration }}\MttVDD'
+
+
+      - name: Submit signing request to SignPath
+        id: signpath_request
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
+          organization-id: '407be075-e08f-4033-a34d-d1aa1dd2578a'
+          project-slug: 'Virtual-Display-Driver'
+          signing-policy-slug: 'test-signing'
+          github-artifact-id: '${{ steps.upload_artifact.outputs.artifact-id }}'
+          wait-for-completion: true
+          output-artifact-directory: 'SignedArtifacts'
+          parameters: |
+            Version: ${{ matrix.configuration }}
+            Release_Tag: "${{ env.RELEASE_TAG }}"
+
+      - name: Verify Signed Artifacts
+        run: dir 'SignedArtifacts'
