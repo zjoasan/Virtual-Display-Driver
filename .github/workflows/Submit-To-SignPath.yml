@@ -63,18 +63,18 @@ jobs:
         uses: signpath/github-action-submit-signing-request@v1
         with:
           api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
-          organization-id: '407be075-e08f-4033-a34d-d1aa1dd2578a'
-          project-slug: 'Virtual-Display-Driver'
-          signing-policy-slug: 'release-signing'
+          organization-id: '${{ vars.SIGNPATH_ORG_ID }}'
+          project-slug: '${{ vars.SIGNPATH_PROJECT_SLUG }}'
+          signing-policy-slug: '${{ vars.SIGNPATH_POLICY_SLUG }}'
           github-artifact-id: '${{ steps.upload_artifact.outputs.artifact-id }}'
           wait-for-completion: true
-          output-artifact-directory: 'SignedArtifacts'
+          output-artifact-directory: '${{ vars.SIGNPATH_OUTPUT_DIR }}'
           parameters: |
             Version: ${{ toJSON(matrix.configuration) }}
             Release_Tag: "${{ env.RELEASE_TAG }}"
 
       - name: Verify Signed Artifacts
-        run: dir 'SignedArtifacts'
+        run: dir '${{ vars.SIGNPATH_OUTPUT_DIR }}'
 
       - name: Upload signed artifacts
         id: upload_signed_artifacts
@@ -93,3 +93,4 @@ jobs:
       - name: Celebrate
         run: |
           echo "Bud is a god, also hi if you're looking at this!"
+
