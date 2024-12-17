@@ -21,10 +21,17 @@ jobs:
 
       - name: Install Visual Studio 2022 dependencies
         run: |
-          choco install visualstudio2022-workload-manageddesktop -y || exit 1
-          choco install visualstudio2022-workload-nativedesktop -y || exit 1
-          choco install visualstudio2022-workload-vctools -y || exit 1
-          choco install windowsdriverkit11 -y || exit 1
+          choco install visualstudio2022-workload-manageddesktop -y
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          
+          choco install visualstudio2022-workload-nativedesktop -y
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          
+          choco install visualstudio2022-workload-vctools -y
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          
+          choco install windowsdriverkit11 -y
+          if ($LASTEXITCODE -ne 0) { exit 1 }
 
       - name: Build the driver
         run: |
