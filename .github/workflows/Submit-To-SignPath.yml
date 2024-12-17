@@ -65,7 +65,7 @@ jobs:
           api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
           organization-id: '407be075-e08f-4033-a34d-d1aa1dd2578a'
           project-slug: 'Virtual-Display-Driver'
-          signing-policy-slug: 'test-signing'
+          signing-policy-slug: 'release-signing'
           github-artifact-id: '${{ steps.upload_artifact.outputs.artifact-id }}'
           wait-for-completion: true
           output-artifact-directory: 'SignedArtifacts'
