@@ -114,6 +114,9 @@ jobs:
             (Get-Content "inno-setup\Setup.iss") | 
               ForEach-Object { $_ -replace '1.0.0', '${{ env.RELEASE_TAG }}' } | 
               Set-Content "inno-setup\Setup.iss"
+
+            if (Test-Path "inno-setup\input\Companion\VDDSysTray.exe") {Remove-Item "inno-setup\input\Companion\VDDSysTray.exe"}
+            copy "inno-setup\input\Companion\arm64\VDDSysTray.exe" "inno-setup\input\Companion\"
           }
 
       - name: Compile Installer
