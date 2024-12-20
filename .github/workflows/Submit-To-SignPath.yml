@@ -102,6 +102,10 @@ jobs:
         run: |
           copy "${{ vars.SIGNPATH_OUTPUT_DIR }}\*" inno-setup\input\
           $platform = "${{ matrix.platform }}"
+          (Get-Content "inno-setup\Setup.iss") | 
+            ForEach-Object { $_ -replace '1.0.0', '${{ env.RELEASE_TAG }}' } | 
+            Set-Content "inno-setup\Setup.iss"
+            
           if ($platform -eq 'ARM64') {
             (Get-Content "inno-setup\Setup.iss") | 
               ForEach-Object { $_ -replace 'x64compatible', 'arm64' } | 
@@ -109,10 +113,6 @@ jobs:
                 
             (Get-Content "inno-setup\Setup.iss") | 
               ForEach-Object { $_ -replace '-x64', '-arm64' } | 
-              Set-Content "inno-setup\Setup.iss"
-              
-            (Get-Content "inno-setup\Setup.iss") | 
-              ForEach-Object { $_ -replace '1.0.0', '${{ env.RELEASE_TAG }}' } | 
               Set-Content "inno-setup\Setup.iss"
 
             if (Test-Path "inno-setup\input\Companion\VDDSysTray.exe") {Remove-Item "inno-setup\input\Companion\VDDSysTray.exe"}
