@@ -66,7 +66,7 @@ remedy this, there is a a few tricks built into windows. So here goes:
 4.  ```pnputil /delete-driver oem139.inf```
 5.  (If you still get multiple displays after uninstall, try to repeat uninstall procedure in safemode.)
 
-## HDR Support Now Available for Windows 11 22H2+ 
+## HDR Support Now Available for Windows 11 23H2+ 
 
 ### Videos
 
