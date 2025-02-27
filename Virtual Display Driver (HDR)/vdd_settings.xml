@@ -48,7 +48,6 @@
 		<CustomEdid>false</CustomEdid> <!-- Custom Edid should be named "user_edid.bin"! This does not support emulating resolutions!-->
 		<PreventSpoof>false</PreventSpoof> <!--Enable this to prevent manufacturer spoofing when using custom edid. Please only do so if you need to!-->
 		<EdidCeaOverride>false</EdidCeaOverride> <!--Enable this to override or add hard coded cea-extension block to custom Edid support allowing you to enable HDR-->
-		<HardwareCursor>true</HardwareCursor>
 		<SDR10bit>false</SDR10bit>
 		<HDRPlus>false</HDRPlus> <!-- If you have SDR10 bit enabled, HDRPlus wont work - there’s a conflict because the display system cannot simultaneously handle both high dynamic range 12-bit and standard dynamic range 10-bit settings. -->
 		<logging>false</logging>
@@ -60,4 +59,10 @@
 		<!-- Debug Logging: Logs local system information with every driver function/event/process. Useful for GitHub Help Tickets.-->
 		<SendLogsThroughPipe>true</SendLogsThroughPipe>
 	</options>
+	<cursor>
+		<HardwareCursor>true</HardwareCursor> <!--Whether to display a hardware cursor in the buffer (If disabled streaming apps will use client cursor)-->
+		<CursorMaxY>128</CursorMaxY> <!--The maximum height support for all cursor types. Older intel cpus may be limited to 64x64 -->
+		<CursorMaxX>128</CursorMaxX> <!--The maximum width supported for all supported cursor types.-->
+		<AlphaCursorSupport>true</AlphaCursorSupport> <!--Indicates if the adapter supports the 32-bit alpha cursor format. Most cursors are alpha format.-->
+	</cursor>
 </vdd_settings>

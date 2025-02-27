@@ -98,6 +98,14 @@ bool hardwareCursor = false;
 bool preventManufacturerSpoof = false;
 bool edidCeaOverride = false;
 bool sendLogsThroughPipe = true;
+
+//Mouse settings
+bool alphaCursorSupport = true;
+int CursorMaxX = 128;
+int CursorMaxY = 128;
+
+
+//Rest
 IDDCX_BITS_PER_COMPONENT SDRCOLOUR = IDDCX_BITS_PER_COMPONENT_8;
 IDDCX_BITS_PER_COMPONENT HDRCOLOUR = IDDCX_BITS_PER_COMPONENT_10;
 
@@ -111,6 +119,11 @@ std::map<std::wstring, std::pair<std::wstring, std::wstring>> SettingsQueryMap =
 	{L"PreventMonitorSpoof", {L"PREVENTMONITORSPOOF", L"PreventSpoof"}},
 	{L"EdidCeaOverride", {L"EDIDCEAOVERRIDE", L"EdidCeaOverride"}},
 	{L"SendLogsThroughPipe", {L"SENDLOGSTHROUGHPIPE", L"SendLogsThroughPipe"}},
+	//Cursor
+	{L"AlphaCursorSupport", {L"ALPHACURSORSUPPORT", L"AlphaCursorSupport"}},
+	{L"CursorMaxX", {L"CURSORMAXX", L"CursorMaxX"}},
+	{L"CursorMaxY", {L"CURSORMAXY", L"CursorMaxY"}},
+
 };
 
 vector<unsigned char> Microsoft::IndirectDisp::IndirectDeviceContext::s_KnownMonitorEdid; //Changed to support static vector
@@ -229,6 +242,97 @@ check_xml:
 
 	return xmlLoggingValue;
 }
+
+int GetIntegerSetting(const std::wstring& settingKey) {
+	auto it = SettingsQueryMap.find(settingKey);
+	if (it == SettingsQueryMap.end()) {
+		vddlog("e", "requested data not found in xml, consider updating xml!");
+		return -1;
+	}
+
+	std::wstring regName = it->second.first;
+	std::wstring xmlName = it->second.second;
+
+	std::wstring settingsname = confpath + L"\\vdd_settings.xml";
+	HKEY hKey;
+	DWORD dwValue;
+	DWORD dwBufferSize = sizeof(dwValue);
+	LONG lResult = RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"SOFTWARE\\MikeTheTech\\VirtualDisplayDriver", 0, KEY_READ, &hKey);
+
+	if (lResult == ERROR_SUCCESS) {
+		lResult = RegQueryValueExW(hKey, regName.c_str(), NULL, NULL, (LPBYTE)&dwValue, &dwBufferSize);
+		if (lResult == ERROR_SUCCESS) {
+			RegCloseKey(hKey);
+			LogQueries("d", xmlName + L" - Retrieved integer value: " + std::to_wstring(dwValue));
+			return static_cast<int>(dwValue);
+		}
+		else {
+			LogQueries("d", xmlName + L" - Failed to retrieve integer value from registry. Attempting to read as string.");
+			wchar_t path[MAX_PATH];
+			dwBufferSize = sizeof(path);
+			lResult = RegQueryValueExW(hKey, regName.c_str(), NULL, NULL, (LPBYTE)path, &dwBufferSize);
+			RegCloseKey(hKey);
+			if (lResult == ERROR_SUCCESS) {
+				try {
+					int logValue = std::stoi(path);
+					LogQueries("d", xmlName + L" - Retrieved string value: " + std::to_wstring(logValue));
+					return logValue;
+				}
+				catch (const std::exception&) {
+					LogQueries("d", xmlName + L" - Failed to convert registry string value to integer.");
+				}
+			}
+		}
+	}
+
+	CComPtr<IStream> pFileStream;
+	HRESULT hr = SHCreateStreamOnFileEx(settingsname.c_str(), STGM_READ, FILE_ATTRIBUTE_NORMAL, FALSE, nullptr, &pFileStream);
+	if (FAILED(hr)) {
+		LogQueries("d", xmlName + L" - Failed to create file stream for XML settings.");
+		return -1;
+	}
+
+	CComPtr<IXmlReader> pReader;
+	hr = CreateXmlReader(__uuidof(IXmlReader), (void**)&pReader, nullptr);
+	if (FAILED(hr)) {
+		LogQueries("d", xmlName + L" - Failed to create XML reader.");
+		return -1;
+	}
+
+	hr = pReader->SetInput(pFileStream);
+	if (FAILED(hr)) {
+		LogQueries("d", xmlName + L" - Failed to set input for XML reader.");
+		return -1;
+	}
+
+	XmlNodeType nodeType;
+	const wchar_t* pwszLocalName;
+	int xmlLoggingValue = -1;
+
+	while (S_OK == pReader->Read(&nodeType)) {
+		if (nodeType == XmlNodeType_Element) {
+			pReader->GetLocalName(&pwszLocalName, nullptr);
+			if (wcscmp(pwszLocalName, xmlName.c_str()) == 0) {
+				pReader->Read(&nodeType);
+				if (nodeType == XmlNodeType_Text) {
+					const wchar_t* pwszValue;
+					pReader->GetValue(&pwszValue, nullptr);
+					try {
+						xmlLoggingValue = std::stoi(pwszValue);
+						LogQueries("i", xmlName + L" - Retrieved from XML: " + std::to_wstring(xmlLoggingValue));
+					}
+					catch (const std::exception&) {
+						LogQueries("d", xmlName + L" - Failed to convert XML string value to integer.");
+					}
+					break;
+				}
+			}
+		}
+	}
+
+	return xmlLoggingValue;
+}
+
 
 string WStringToString(const wstring& wstr) { //basically just a function for converting strings since codecvt is depricated in c++ 17
 	if (wstr.empty()) return "";
@@ -1230,10 +1334,15 @@ extern "C" NTSTATUS DriverEntry(
 	SDRCOLOUR = SDR10 ? IDDCX_BITS_PER_COMPONENT_10 : IDDCX_BITS_PER_COMPONENT_8;
 
 	customEdid = EnabledQuery(L"CustomEdidEnabled");
-	hardwareCursor = EnabledQuery(L"HardwareCursorEnabled");
 	preventManufacturerSpoof = EnabledQuery(L"PreventMonitorSpoof");
 	edidCeaOverride = EnabledQuery(L"EdidCeaOverride");
 	sendLogsThroughPipe = EnabledQuery(L"SendLogsThroughPipe");
+
+	//Cursor
+	hardwareCursor = EnabledQuery(L"HardwareCursorEnabled");
+	alphaCursorSupport = EnabledQuery(L"AlphaCursorSupport");
+	CursorMaxX = GetIntegerSetting(L"CursorMaxX");
+	CursorMaxY = GetIntegerSetting(L"CursorMaxY");
 
 	vddlog("i", "Driver Starting");
 	string utf8_confpath = WStringToString(confpath);
@@ -2476,10 +2585,10 @@ void IndirectDeviceContext::AssignSwapChain(IDDCX_MONITOR& Monitor, IDDCX_SWAPCH
 			IDDCX_CURSOR_CAPS cursorInfo = {};
 			cursorInfo.Size = sizeof(cursorInfo);
 			cursorInfo.ColorXorCursorSupport = IDDCX_XOR_CURSOR_SUPPORT_FULL; 
-			cursorInfo.AlphaCursorSupport = true;
+			cursorInfo.AlphaCursorSupport = alphaCursorSupport;
 
-			cursorInfo.MaxX = 512;       //Apparently in most cases 128 is fine but for safe guarding we will go 512, older intel cpus may be limited to 64x64
-			cursorInfo.MaxY = 512;  
+			cursorInfo.MaxX = CursorMaxX;       //Apparently in most cases 128 is fine but for safe guarding we will go 512, older intel cpus may be limited to 64x64
+			cursorInfo.MaxY = CursorMaxY;
 
 			//DirectXDevice->QueryMaxCursorSize(&cursorInfo.MaxX, &cursorInfo.MaxY);                 Experimental to get max cursor size - THIS IS NTO WORKING CODE
 
