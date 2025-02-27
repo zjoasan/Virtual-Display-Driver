@@ -1,0 +1,120 @@
+name: Help Request
+description: Request help with an issue.
+title: "[Help]: "
+labels: ["help wanted", "triage"]
+assignees: ["zjoasan", "bud3699", "itsmikethetech"]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reaching out! Please provide as much detail as possible to help us assist you.
+  
+  - type: dropdown
+    id: OS
+    attributes:
+      label: Which OS?
+      description: What version of Windows are you using?
+      options:
+        - Win11 Pro
+        - Win11 Home
+        - Win10 Pro
+        - Win10 Home
+        - Other..
+      default: 0
+    validations:
+      required: true
+  
+  - type: dropdown
+    id: Version
+    attributes:
+      label: Which release?
+      description: What version of Windows are you running?
+      options:
+        - 24H2
+        - 23H2
+        - 22H2
+        - 21H2
+        - 1809
+        - 1607
+        - 1507
+        - Other..
+      default: 0
+    validations:
+      required: true
+  
+  - type: markdown
+    attributes:
+      value: |
+        If you need help finding your Windows version, go to Settings -> System -> About.
+  
+  - type: input
+    id: driver-version
+    attributes:
+      label: Driver Version
+      description: What driver version are you using?
+      placeholder: Enter driver version here.
+    validations:
+      required: true
+  
+  - type: textarea
+    id: device-specs
+    attributes:
+      label: Device Specifications
+      description: Provide details about your hardware. This is to help us indentify whether its a potential hardware incompatibility. This isnt needed but helps.
+      placeholder: |
+        CPU: Example CPU
+        GPU: Example GPU
+        RAM: Example Ram
+        MOBO: Example Motherboard
+    validations:
+      required: false
+  
+  - type: textarea
+    id: issue-info
+    attributes:
+      label: What issue are you experiencing or what do you need help with?
+      description: Describe the issue you need help with.
+      placeholder: |
+        Provide a clear and concise description of the help you need.
+    validations:
+      required: true 
+  
+  - type: textarea
+    id: troubleshooting-steps
+    attributes:
+      label: Troubleshooting steps taken
+      description: What have you tried so far to fix the issue?
+      placeholder: |
+        List steps you've taken to resolve/assist the problem.
+    validations:
+      required: false 
+  
+  - type: textarea
+    id: expected-outcome
+    attributes:
+      label: Expected outcome
+      description: What were you expecting/want to happen?
+      placeholder: |
+        Describe the behavior you expected/want.
+    validations:
+      required: false 
+  
+  - type: textarea
+    id: additional-info
+    attributes:
+      label: Additional information
+      description: Any extra details that might help us assist you.
+      placeholder: |
+        Provide any relevant logs, screenshots, or error messages.
+    validations:
+      required: false
+
+  - type: input
+    id: contact
+    attributes:
+      label: Contact Details
+      description: How can we reach you if we need more information?
+      placeholder: ex. email@example.com
+    validations:
+      required: false
