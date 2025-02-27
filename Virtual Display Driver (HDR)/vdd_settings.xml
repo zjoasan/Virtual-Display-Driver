@@ -48,8 +48,6 @@
 		<CustomEdid>false</CustomEdid> <!-- Custom Edid should be named "user_edid.bin"! This does not support emulating resolutions!-->
 		<PreventSpoof>false</PreventSpoof> <!--Enable this to prevent manufacturer spoofing when using custom edid. Please only do so if you need to!-->
 		<EdidCeaOverride>false</EdidCeaOverride> <!--Enable this to override or add hard coded cea-extension block to custom Edid support allowing you to enable HDR-->
-		<SDR10bit>false</SDR10bit>
-		<HDRPlus>false</HDRPlus> <!-- If you have SDR10 bit enabled, HDRPlus wont work - there’s a conflict because the display system cannot simultaneously handle both high dynamic range 12-bit and standard dynamic range 10-bit settings. -->
 		<logging>false</logging>
         <!-- DEBUG LOGGING FOR EXPERTS ONLY!-->
         <debuglogging>false</debuglogging> 
@@ -72,4 +70,18 @@
 		3 = IDDCX_XOR_CURSOR_SUPPORT_EMULATION
 		-->
 	</cursor>
+	<colour>
+		<SDR10bit>false</SDR10bit>
+		<HDRPlus>false</HDRPlus> <!-- If you have SDR10 bit enabled, HDRPlus wont work - there’s a conflict because the display system cannot simultaneously handle both high dynamic range 12-bit and standard dynamic range 10-bit settings. -->
+		<ColourFormat>RGB</ColourFormat>
+		<!--
+		Supported colour formats:
+		RGB
+		YCbCr444
+		YCbCr422
+		YCbCr420
+		
+		Any invalid colour formats which are used will default to use RGB
+		-->
+	</colour>
 </vdd_settings>
