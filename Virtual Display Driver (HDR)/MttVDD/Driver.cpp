@@ -97,6 +97,7 @@ bool customEdid = false;
 bool hardwareCursor = false;
 bool preventManufacturerSpoof = false;
 bool edidCeaOverride = false;
+bool sendLogsThroughPipe = true;
 IDDCX_BITS_PER_COMPONENT SDRCOLOUR = IDDCX_BITS_PER_COMPONENT_8;
 IDDCX_BITS_PER_COMPONENT HDRCOLOUR = IDDCX_BITS_PER_COMPONENT_10;
 
@@ -109,6 +110,7 @@ std::map<std::wstring, std::pair<std::wstring, std::wstring>> SettingsQueryMap =
 	{L"HardwareCursorEnabled", {L"HARDWARECURSOR", L"HardwareCursor"}},
 	{L"PreventMonitorSpoof", {L"PREVENTMONITORSPOOF", L"PreventSpoof"}},
 	{L"EdidCeaOverride", {L"EDIDCEAOVERRIDE", L"EdidCeaOverride"}},
+	{L"SendLogsThroughPipe", {L"SENDLOGSTHROUGHPIPE", L"SendLogsThroughPipe"}},
 };
 
 vector<unsigned char> Microsoft::IndirectDisp::IndirectDeviceContext::s_KnownMonitorEdid; //Changed to support static vector
@@ -348,7 +350,7 @@ void vddlog(const char* type, const char* message) {
 
 		fclose(logFile);
 
-		if (g_pipeHandle != INVALID_HANDLE_VALUE) {
+		if (sendLogsThroughPipe && g_pipeHandle != INVALID_HANDLE_VALUE) {
 			string logMessage = ss.str() + " [" + logType + "] " + message + "\n";
 			DWORD bytesWritten;
 			DWORD logMessageSize = static_cast<DWORD>(logMessage.size());
@@ -1231,6 +1233,7 @@ extern "C" NTSTATUS DriverEntry(
 	hardwareCursor = EnabledQuery(L"HardwareCursorEnabled");
 	preventManufacturerSpoof = EnabledQuery(L"PreventMonitorSpoof");
 	edidCeaOverride = EnabledQuery(L"EdidCeaOverride");
+	sendLogsThroughPipe = EnabledQuery(L"SendLogsThroughPipe");
 
 	vddlog("i", "Driver Starting");
 	string utf8_confpath = WStringToString(confpath);

@@ -58,5 +58,6 @@
 		<!-- Warning: Leaving logging on too long can lead to excessive filesize. Especially DebugLogging, which should only be used for short periods to log errors. -->
 		<!-- Logging: Useful to troubleshoot and determine which GPUs are being used, and if displays are working as intended.-->
 		<!-- Debug Logging: Logs local system information with every driver function/event/process. Useful for GitHub Help Tickets.-->
+		<SendLogsThroughPipe>true</SendLogsThroughPipe>
 	</options>
 </vdd_settings>
