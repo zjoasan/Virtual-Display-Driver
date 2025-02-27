@@ -9,6 +9,7 @@ body:
     attributes:
       value: |
         Thanks for taking the time to fill out this bug report!
+  
   - type: dropdown
     id: OS
     attributes:
@@ -23,6 +24,7 @@ body:
       default: 0
     validations:
       required: true
+  
   - type: dropdown
     id: Version
     attributes:
@@ -40,10 +42,34 @@ body:
       default: 0
     validations:
       required: true
+  
   - type: markdown
     attributes:
       value: |
-        If you struggle finding windows edition and version, Go to settings -> system -> about. Under windows specifications.
+        If you struggle finding Windows edition and version, go to Settings -> System -> About. Under Windows specifications.
+  
+  - type: input
+    id: driver-version
+    attributes:
+      label: Driver Version
+      description: What driver version are you using?
+      placeholder: Enter driver version here.
+    validations:
+      required: true
+  
+  - type: textarea
+    id: device-specs
+    attributes:
+      label: Device Specifications
+      description: Provide details about your hardware. This is to help us indentify whether its a potential hardware issue.
+      placeholder: |
+        CPU: Example CPU
+        GPU: Example GPU
+        RAM: Example Ram
+        MOBO: Example Motherboard
+    validations:
+      required: false
+  
   - type: textarea
     id: bug-info
     attributes:
@@ -54,16 +80,20 @@ body:
         A clear and concise description of what the bug is.
     validations:
       required: true 
+  
   - type: textarea
     id: reproduce-info
     attributes:
       label: Steps to reproduce
-      description: And if you can how to reproduce 
+      description: And if you can, how to reproduce 
       placeholder: |
         Tell us how to reproduce!
-        Go to '...', 2. Click on '....', and so on.
+        1. Go to '...'
+        2. Click on '....'
+        3. Observe issue.
     validations:
       required: false 
+  
   - type: textarea
     id: expected-info
     attributes:
@@ -71,14 +101,15 @@ body:
       description: Please inform us about expected behavior.
       placeholder: |
         Description of behavior!
-        When i Clicked...
+        When I clicked...
     validations:
       required: false 
+  
   - type: textarea
     id: log-file
     attributes:
       label: Log File 
-      description: Please attach the log file to help us diagnose the issue. You can drag and drop the file here or click to upload. The log can be retrieved by enabling the log file in the xml then restarting the driver.
+      description: Please attach the log file to help us diagnose the issue. You can drag and drop the file here or click to upload. The log can be retrieved by enabling the log file in the XML, then restarting the driver.
       placeholder: Drag and drop the log file here or click to upload.
     validations:
       required: false
@@ -91,4 +122,3 @@ body:
       placeholder: ex. email@example.com
     validations:
       required: false
-
