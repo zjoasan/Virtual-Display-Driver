@@ -22,7 +22,6 @@ Environment:
 #include <AdapterOption.h>
 #include <xmllite.h>
 #include <shlwapi.h>
-#include <shlwapi.h>
 #include <atlbase.h>
 #include <iostream>
 #include <cstdlib>
@@ -35,8 +34,6 @@ Environment:
 #include <cerrno>
 #include <locale>
 #include <cwchar>
-#include <string>
-#include <cstdlib>
 #include <map>
 #include <set>
 
