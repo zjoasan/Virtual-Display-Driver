@@ -64,5 +64,12 @@
 		<CursorMaxY>128</CursorMaxY> <!--The maximum height support for all cursor types. Older intel cpus may be limited to 64x64 -->
 		<CursorMaxX>128</CursorMaxX> <!--The maximum width supported for all supported cursor types.-->
 		<AlphaCursorSupport>true</AlphaCursorSupport> <!--Indicates if the adapter supports the 32-bit alpha cursor format. Most cursors are alpha format.-->
+		<XorCursorSupportLevel>2</XorCursorSupportLevel> <!-- Do not change if you don't know what you're doing -->
+		<!--
+		0 = IDDCX_XOR_CURSOR_SUPPORT_UNINITIALIZED
+		1 = IDDCX_XOR_CURSOR_SUPPORT_NONE
+		2 = IDDCX_XOR_CURSOR_SUPPORT_FULL
+		3 = IDDCX_XOR_CURSOR_SUPPORT_EMULATION
+		-->
 	</cursor>
 </vdd_settings>

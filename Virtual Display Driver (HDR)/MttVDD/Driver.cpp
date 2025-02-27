@@ -103,6 +103,7 @@ bool sendLogsThroughPipe = true;
 bool alphaCursorSupport = true;
 int CursorMaxX = 128;
 int CursorMaxY = 128;
+IDDCX_XOR_CURSOR_SUPPORT XorCursorSupportLevel = IDDCX_XOR_CURSOR_SUPPORT_FULL;
 
 
 //Rest
@@ -123,8 +124,25 @@ std::map<std::wstring, std::pair<std::wstring, std::wstring>> SettingsQueryMap =
 	{L"AlphaCursorSupport", {L"ALPHACURSORSUPPORT", L"AlphaCursorSupport"}},
 	{L"CursorMaxX", {L"CURSORMAXX", L"CursorMaxX"}},
 	{L"CursorMaxY", {L"CURSORMAXY", L"CursorMaxY"}},
+	{L"XorCursorSupportLevel", {L"XORCURSORSUPPORTLEVEL", L"XorCursorSupportLevel"}},
 
 };
+
+const char* XorCursorSupportLevelToString(IDDCX_XOR_CURSOR_SUPPORT level) {
+	switch (level) {
+	case IDDCX_XOR_CURSOR_SUPPORT_UNINITIALIZED:
+		return "IDDCX_XOR_CURSOR_SUPPORT_UNINITIALIZED";
+	case IDDCX_XOR_CURSOR_SUPPORT_NONE:
+		return "IDDCX_XOR_CURSOR_SUPPORT_NONE";
+	case IDDCX_XOR_CURSOR_SUPPORT_FULL:
+		return "IDDCX_XOR_CURSOR_SUPPORT_FULL";
+	case IDDCX_XOR_CURSOR_SUPPORT_EMULATION:
+		return "IDDCX_XOR_CURSOR_SUPPORT_EMULATION";
+	default:
+		return "Unknown";
+	}
+}
+
 
 vector<unsigned char> Microsoft::IndirectDisp::IndirectDeviceContext::s_KnownMonitorEdid; //Changed to support static vector
 
@@ -1343,6 +1361,23 @@ extern "C" NTSTATUS DriverEntry(
 	alphaCursorSupport = EnabledQuery(L"AlphaCursorSupport");
 	CursorMaxX = GetIntegerSetting(L"CursorMaxX");
 	CursorMaxY = GetIntegerSetting(L"CursorMaxY");
+
+	int xorCursorSupportLevelInt = GetIntegerSetting(L"XorCursorSupportLevel");
+	std::string xorCursorSupportLevelName;
+
+	if (xorCursorSupportLevelInt < 0 || xorCursorSupportLevelInt > 3) {
+		vddlog("w", "Selected Xor Level unsupported, defaulting to IDDCX_XOR_CURSOR_SUPPORT_FULL");
+		XorCursorSupportLevel = IDDCX_XOR_CURSOR_SUPPORT_FULL;
+	}
+	else {
+		XorCursorSupportLevel = static_cast<IDDCX_XOR_CURSOR_SUPPORT>(xorCursorSupportLevelInt);
+	}
+
+	xorCursorSupportLevelName = XorCursorSupportLevelToString(XorCursorSupportLevel);
+
+	vddlog("i", ("Selected Xor Cursor Support Level: " + xorCursorSupportLevelName).c_str());
+
+
 
 	vddlog("i", "Driver Starting");
 	string utf8_confpath = WStringToString(confpath);
