@@ -1,4 +1,4 @@
-name: Virtual Display Driver Signpath Request
+name: Virtual Display Driver All Signpath Request
 on:
   workflow_dispatch:
 
