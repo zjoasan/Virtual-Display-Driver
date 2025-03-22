@@ -96,4 +96,7 @@
 		<parse_edid_res>false</parse_edid_res>
 		<!-- Set to true to overwrite all resolutions from settings-xml with ones parsed from user_edid.bin -->
 	</edid>
+	<!-- Sort order for videmodes, whenever there are more then 92 modes it will cut the last ones(lower res when x-desc) -->
+	<!-- Alternatives: x-desc, x-ass, y-desc, y-ass, ref.rate-desc, ref.rate-ass	-->
+	<res-sort>x-desc</res-sort>
 </vdd_settings>
