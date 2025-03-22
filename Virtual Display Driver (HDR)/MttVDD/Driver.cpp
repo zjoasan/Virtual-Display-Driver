@@ -100,6 +100,7 @@ bool hardwareCursor = false;
 bool preventManufacturerSpoof = false;
 bool edidCeaOverride = false;
 bool sendLogsThroughPipe = true;
+bool PreventARlimit = true;
 
 //Mouse settings
 bool alphaCursorSupport = true;
@@ -122,6 +123,7 @@ std::map<std::wstring, std::pair<std::wstring, std::wstring>> SettingsQueryMap =
 	{L"PreventMonitorSpoof", {L"PREVENTMONITORSPOOF", L"PreventSpoof"}},
 	{L"EdidCeaOverride", {L"EDIDCEAOVERRIDE", L"EdidCeaOverride"}},
 	{L"SendLogsThroughPipe", {L"SENDLOGSTHROUGHPIPE", L"SendLogsThroughPipe"}},
+	{L"PreventARlimit", {L"RMARLIMIT", L"RatioLimit"}},
 	//Cursor Begin
 	{L"HardwareCursorEnabled", {L"HARDWARECURSOR", L"HardwareCursor"}},
 	{L"AlphaCursorSupport", {L"ALPHACURSORSUPPORT", L"AlphaCursorSupport"}},
@@ -1430,7 +1432,7 @@ extern "C" NTSTATUS DriverEntry(
 	preventManufacturerSpoof = EnabledQuery(L"PreventMonitorSpoof");
 	edidCeaOverride = EnabledQuery(L"EdidCeaOverride");
 	sendLogsThroughPipe = EnabledQuery(L"SendLogsThroughPipe");
-
+	PreventARlimit = EnabledQuery(L"RatioLimit");
 
 	//colour
 	HDRPlus = EnabledQuery(L"HDRPlusEnabled");
@@ -1522,43 +1524,6 @@ void loadSettings() {
 		UINT cwchLocalName;
 		UINT cwchValue;
 		wstring currentElement;
-
-    // Sort and cap monitorModes based on res-sort
-    if (!monitorModes.empty()) {
-        // Parse res-sort value
-        bool descending = resSort.find(L"desc") != wstring::npos;
-        if (resSort.find(L"x") != wstring::npos) {
-            std::sort(monitorModes.begin(), monitorModes.end(),
-                      [descending](const tuple<int, int, int, int>& a, const tuple<int, int, int, int>& b) {
-                          return descending ? std::get<0>(a) > std::get<0>(b) : std::get<0>(a) < std::get<0>(b);
-                      });
-        }
-        else if (resSort.find(L"y") != wstring::npos) {
-            std::sort(monitorModes.begin(), monitorModes.end(),
-                      [descending](const tuple<int, int, int, int>& a, const tuple<int, int, int, int>& b) {
-                          return descending ? std::get<1>(a) > std::get<1>(b) : std::get<1>(a) < std::get<1>(b);
-                      });
-        }
-        else if (resSort.find(L"ref.rate") != wstring::npos) {
-            std::sort(monitorModes.begin(), monitorModes.end(),
-                      [descending](const tuple<int, int, int, int>& a, const tuple<int, int, int, int>& b) {
-                          return descending ? std::get<2>(a) > std::get<2>(b) : std::get<2>(a) < std::get<2>(b);
-                      });
-        }
-        else {
-            // Default to x-desc if res-sort is invalid
-            std::sort(monitorModes.begin(), monitorModes.end(),
-                      [](const tuple<int, int, int, int>& a, const tuple<int, int, int, int>& b) {
-                          return std::get<0>(a) > std::get<0>(b);
-                      });
-        }
-
-        // Cap at 92 modes, keeping highest values based on sort
-        if (monitorModes.size() > 92) {
-            monitorModes.resize(92);
-            vddlog("i", "Capped monitorModes to 92, removed lowest-value modes based on sort");
-        }
-    }
 		wstring width, height, refreshRate;
 		vector<tuple<int, int, int, int>> res;
 		wstring gpuFriendlyName;
@@ -2398,6 +2363,14 @@ void modifyEdid(vector<BYTE>& edid) {
 	edid[11] = 0x13;
 }
 
+void ARnullEdid(vector<BYTE>& edid) {
+	if (edid.size() < 12) {
+		return;
+	}
+
+	edid[21] = 0x00;
+	edid[22] = 0x00;
+}
 
 
 BYTE calculateChecksum(const std::vector<BYTE>& edid) {
@@ -2473,6 +2446,7 @@ int maincalc() {
 	vector<BYTE> edid = loadEdid(WStringToString(confpath) + "\\user_edid.bin");
 
 	if (!preventManufacturerSpoof) modifyEdid(edid);
+	if (!PreventARlimit) ARnullEdid(edid);
 	BYTE checksum = calculateChecksum(edid);
 	edid[127] = checksum;
 	// Setting this variable is depricated, hardcoded edid is either returned or custom in loading edid function

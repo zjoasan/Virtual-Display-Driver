@@ -91,6 +91,8 @@
 		<!-- Custom Edid should be named "user_edid.bin"! This does not support emulating resolutions!-->
 		<PreventSpoof>false</PreventSpoof>
 		<!--Enable this to prevent manufacturer spoofing when using custom edid. Please only do so if you need to!-->
+		<RatioLimit>true</RatioLimit>
+		<!-- Change for unlocking more videomodes from EDID, where ratio don't match -->
 		<EdidCeaOverride>false</EdidCeaOverride>
 		<!--Enable this to override or add hard coded cea-extension block to custom Edid support allowing you to enable HDR-->
 		<parse_edid_res>false</parse_edid_res>
