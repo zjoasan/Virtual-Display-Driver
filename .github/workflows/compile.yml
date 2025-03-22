@@ -1,5 +1,4 @@
 name: Virtual Display Driver Building
-
 on:
   workflow_dispatch:
   push:
@@ -8,7 +7,6 @@ on:
   pull_request:
     branches:
       - master
-
 jobs:
   build:
     runs-on: windows-latest
@@ -19,13 +17,13 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-
+      
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v1
-
+      
       - name: Check Chocolatey installation
         run: choco --version
-
+      
       - name: Install Visual Studio 2022 dependencies
         run: |
           choco install visualstudio2022-workload-manageddesktop -y
@@ -39,14 +37,41 @@ jobs:
           
           choco install windowsdriverkit11 -y
           if ($LASTEXITCODE -ne 0) { exit 1 }
-
+      
+      # Fix the InfVerif.dll issue by creating the proper directory structure and copying files
+      - name: Fix WDK paths for InfVerif
+        run: |
+          $wdkPath = "C:\Program Files (x86)\Windows Kits\10"
+          $infVerifSrc = "$wdkPath\bin\10.0.22000.0\x86\InfVerif.exe"
+          $infVerifDst = "$wdkPath\bin\10.0.26100.0\x86"
+          
+          # Create directory structure if it doesn't exist
+          New-Item -ItemType Directory -Force -Path "$infVerifDst\x86"
+          
+          # Copy InfVerif files
+          Copy-Item "$infVerifSrc" -Destination "$infVerifDst"
+          Copy-Item "$wdkPath\bin\10.0.22000.0\x86\infverif.exe.mui" -Destination "$infVerifDst" -ErrorAction SilentlyContinue
+          Copy-Item "$wdkPath\bin\10.0.22000.0\x86\infverif.dll" -Destination "$infVerifDst\x86" -ErrorAction SilentlyContinue
+          
+          # List the files to confirm
+          Get-ChildItem "$infVerifDst"
+          Get-ChildItem "$infVerifDst\x86" -ErrorAction SilentlyContinue
+      
+      # Fix the string conversion warning treated as error
+      - name: Fix string conversion in Driver.cpp
+        run: |
+          $filePath = "Virtual Display Driver (HDR)/MttVDD/Driver.cpp"
+          $content = Get-Content -Path $filePath -Raw
+          $content = $content -replace 'string edidPath\(edidname\.begin\(\), edidname\.end\(\)\);', 'string edidPath = WStringToString(edidname);'
+          Set-Content -Path $filePath -Value $content
+      
       - name: Build the driver
         run: |
           msbuild "Virtual Display Driver (HDR)/MTTVDD.sln" /p:Configuration=${{ matrix.configuration }} /p:Platform=${{ matrix.platform }}
-
+      
       - name: List build directory
         run: dir "Virtual Display Driver (HDR)\${{ matrix.platform }}\${{ matrix.configuration }}\MttVDD"
-
+      
       - name: Upload built driver
         id: upload_artifact
         uses: actions/upload-artifact@v4
@@ -57,17 +82,16 @@ jobs:
             Virtual Display Driver (HDR)\${{ matrix.platform }}\${{ matrix.configuration }}\MttVDD\MttVDD.inf
             Virtual Display Driver (HDR)\${{ matrix.platform }}\${{ matrix.configuration }}\MttVDD\mttvdd.cat
             Virtual Display Driver (HDR)\${{ matrix.platform }}\${{ matrix.configuration }}\MttVDD\vdd_settings.xml
-
+      
       - name: Generate release tag
         id: generate_tag
         run: |
           $releaseTag = (Get-Date).ToString('yy.MM.dd')
           echo "RELEASE_TAG=$releaseTag" >> $env:GITHUB_ENV
-
+      
       - name: Show generated release tag
         run: |
           echo "Generated Release Tag: ${{ env.RELEASE_TAG }}"
             
       - name: Verify Built Artifacts
         run: dir 'Virtual Display Driver (HDR)\${{ matrix.platform }}\${{ matrix.configuration }}\MttVDD'
-
