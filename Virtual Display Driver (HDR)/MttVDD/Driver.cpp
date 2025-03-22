@@ -1700,7 +1700,7 @@ void loadSettings() {
 		const wstring edidname = confpath + L"\\user_edid.bin";
 		if (PathFileExistsW(edidname.c_str())) {
 			try {
-				string edidPath(edidname.begin(), edidname.end()); // Convert wstring to string
+				string edidPath = WStringToString(edidname); // Convert wstring to string using safe conversion
 				monitorModes = EdidParser::load_and_parse_edid(edidPath);
 				vddlog("i", "Overriding monitor modes with user_edid.bin (parse_edid_res = true)");
 				for (const auto& mode : monitorModes) {
