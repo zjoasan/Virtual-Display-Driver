@@ -4,6 +4,7 @@
 #include <stdexcept>
 #include <fstream>
 #include <stdio.h>
+#include <set>
 
 namespace EdidParser {
 
@@ -242,6 +243,10 @@ std::vector<MonitorMode> parse_edid(const uint8_t* edid_data, size_t size) {
             default: break;
         }
     }
+
+    // Deduplicate modes
+    std::set<MonitorMode> uniqueModes(modes.begin(), modes.end());
+    modes.assign(uniqueModes.begin(), uniqueModes.end());
 
     return modes;
 }

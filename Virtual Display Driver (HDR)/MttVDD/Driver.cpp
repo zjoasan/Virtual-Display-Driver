@@ -37,6 +37,7 @@ Environment:
 #include <cwchar>
 #include <map>
 #include <set>
+#include <algorithm>
 
 
 
@@ -1494,6 +1495,7 @@ void loadSettings() {
 	const wstring settingsname = confpath + L"\\vdd_settings.xml";
 	const wstring& filename = settingsname;
 	bool parseEdidRes = false; // Default to false unless specified in XML
+	wstring resSort;
 
 	if (PathFileExistsW(filename.c_str())) {
 		CComPtr<IStream> pStream;
@@ -1520,6 +1522,43 @@ void loadSettings() {
 		UINT cwchLocalName;
 		UINT cwchValue;
 		wstring currentElement;
+
+    // Sort and cap monitorModes based on res-sort
+    if (!monitorModes.empty()) {
+        // Parse res-sort value
+        bool descending = resSort.find(L"desc") != wstring::npos;
+        if (resSort.find(L"x") != wstring::npos) {
+            std::sort(monitorModes.begin(), monitorModes.end(),
+                      [descending](const tuple<int, int, int, int>& a, const tuple<int, int, int, int>& b) {
+                          return descending ? std::get<0>(a) > std::get<0>(b) : std::get<0>(a) < std::get<0>(b);
+                      });
+        }
+        else if (resSort.find(L"y") != wstring::npos) {
+            std::sort(monitorModes.begin(), monitorModes.end(),
+                      [descending](const tuple<int, int, int, int>& a, const tuple<int, int, int, int>& b) {
+                          return descending ? std::get<1>(a) > std::get<1>(b) : std::get<1>(a) < std::get<1>(b);
+                      });
+        }
+        else if (resSort.find(L"ref.rate") != wstring::npos) {
+            std::sort(monitorModes.begin(), monitorModes.end(),
+                      [descending](const tuple<int, int, int, int>& a, const tuple<int, int, int, int>& b) {
+                          return descending ? std::get<2>(a) > std::get<2>(b) : std::get<2>(a) < std::get<2>(b);
+                      });
+        }
+        else {
+            // Default to x-desc if res-sort is invalid
+            std::sort(monitorModes.begin(), monitorModes.end(),
+                      [](const tuple<int, int, int, int>& a, const tuple<int, int, int, int>& b) {
+                          return std::get<0>(a) > std::get<0>(b);
+                      });
+        }
+
+        // Cap at 92 modes, keeping highest values based on sort
+        if (monitorModes.size() > 92) {
+            monitorModes.resize(92);
+            vddlog("i", "Capped monitorModes to 92, removed lowest-value modes based on sort");
+        }
+    }
 		wstring width, height, refreshRate;
 		vector<tuple<int, int, int, int>> res;
 		wstring gpuFriendlyName;
@@ -1572,6 +1611,9 @@ void loadSettings() {
 				else if (currentElement == L"parse_edid_res") {
 					wstring value(pwszValue, cwchValue);
 					parseEdidRes = (value == L"true" || value == L"1"); // Accept "true" or "1"
+				}
+				else if (currentElement == L"res-sort") {
+					resSort = wstring(pwszValue, cwchValue);
 				}
 				break;
 			}
@@ -1676,6 +1718,43 @@ void loadSettings() {
 		}
 		else {
 			vddlog("w", "parse_edid_res is true, but user_edid.bin not found; keeping current modes");
+		}
+		// Sort and cap monitorModes to 92, 
+		// Sort based on res-sort in xml, (x-desc | y-ass | ref.rate) defaults to x-desc
+		if (!monitorModes.empty()) {
+			// Parse res-sort value
+			bool descending = resSort.find(L"desc") != wstring::npos;
+			if (resSort.find(L"x") != wstring::npos) {
+				std::sort(monitorModes.begin(), monitorModes.end(),
+					[descending](const tuple<int, int, int, int>& a, const tuple<int, int, int, int>& b) {
+						return descending ? std::get<0>(a) > std::get<0>(b) : std::get<0>(a) < std::get<0>(b);
+					});
+			}
+			else if (resSort.find(L"y") != wstring::npos) {
+				std::sort(monitorModes.begin(), monitorModes.end(),
+					[descending](const tuple<int, int, int, int>& a, const tuple<int, int, int, int>& b) {
+						return descending ? std::get<1>(a) > std::get<1>(b) : std::get<1>(a) < std::get<1>(b);
+					});
+			}
+			else if (resSort.find(L"ref.rate") != wstring::npos) {
+				std::sort(monitorModes.begin(), monitorModes.end(),
+					[descending](const tuple<int, int, int, int>& a, const tuple<int, int, int, int>& b) {
+						return descending ? std::get<2>(a) > std::get<2>(b) : std::get<2>(a) < std::get<2>(b);
+					});
+			}
+			else {
+				// Default to x-desc if res-sort is invalid
+				std::sort(monitorModes.begin(), monitorModes.end(),
+					[](const tuple<int, int, int, int>& a, const tuple<int, int, int, int>& b) {
+						return std::get<0>(a) > std::get<0>(b);
+					});
+			}
+
+			// Cap at 92 modes, keeping highest values based on sort
+			if (monitorModes.size() > 92) {
+				monitorModes.resize(92);
+				vddlog("i", "Capped monitorModes to 92, removed lowest-value modes based on sort");
+			}
 		}
 	}
 }
