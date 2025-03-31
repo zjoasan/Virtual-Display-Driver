@@ -13,13 +13,10 @@ Environment:
 --*/
 
 #include "Driver.h"
-#include "edid_parser.cpp"
-//#include "Driver.tmh"
-#include<fstream>
-#include<sstream>
-#include<string>
-#include<tuple>
-#include<vector>
+#include <fstream>
+#include <sstream>
+#include <string>
+#include <tuple>
 #include <AdapterOption.h>
 #include <xmllite.h>
 #include <shlwapi.h>
@@ -38,10 +35,15 @@ Environment:
 #include <map>
 #include <set>
 #include <algorithm>
+#include "edid_parser.cpp"
+#include "globals.h"
+#include <frame_handler.h>
+#include <codecvt>
 
-
-
-
+/*
+#include <wrl/client.h>
+#include <vector>
+*/
 
 #define PIPE_NAME L"\\\\.\\pipe\\MTTVirtualDisplayPipe"
 
@@ -101,13 +103,15 @@ bool preventManufacturerSpoof = false;
 bool edidCeaOverride = false;
 bool sendLogsThroughPipe = true;
 bool PreventARlimit = true;
+wstring ShaderShortName = L"CRT";
+bool ShaderEnabled = false;
+wstring shaderPathfile = L"C:\\VirtualDisplayDriver\\Shaders";
 
 //Mouse settings
 bool alphaCursorSupport = true;
 int CursorMaxX = 128;
 int CursorMaxY = 128;
 IDDCX_XOR_CURSOR_SUPPORT XorCursorSupportLevel = IDDCX_XOR_CURSOR_SUPPORT_FULL;
-
 
 //Rest
 IDDCX_BITS_PER_COMPONENT SDRCOLOUR = IDDCX_BITS_PER_COMPONENT_8;
@@ -119,7 +123,6 @@ std::map<std::wstring, std::pair<std::wstring, std::wstring>> SettingsQueryMap =
 	{L"LoggingEnabled", {L"LOGS", L"logging"}},
 	{L"DebugLoggingEnabled", {L"DEBUGLOGS", L"debuglogging"}},
 	{L"CustomEdidEnabled", {L"CUSTOMEDID", L"CustomEdid"}},
-
 	{L"PreventMonitorSpoof", {L"PREVENTMONITORSPOOF", L"PreventSpoof"}},
 	{L"EdidCeaOverride", {L"EDIDCEAOVERRIDE", L"EdidCeaOverride"}},
 	{L"SendLogsThroughPipe", {L"SENDLOGSTHROUGHPIPE", L"SendLogsThroughPipe"}},
@@ -134,8 +137,8 @@ std::map<std::wstring, std::pair<std::wstring, std::wstring>> SettingsQueryMap =
 	//Colour Begin
 	{L"HDRPlusEnabled", {L"HDRPLUS", L"HDRPlus"}},
 	{L"SDR10Enabled", {L"SDR10BIT", L"SDR10bit"}},
-	{L"ColourFormat", {L"COLOURFORMAT", L"ColourFormat"}},
-	//Colour End
+	{L"ColourFormat", {L"COLOURFORMAT", L"ColourFormat"}}
+
 };
 
 const char* XorCursorSupportLevelToString(IDDCX_XOR_CURSOR_SUPPORT level) {
@@ -166,6 +169,7 @@ struct IndirectDeviceContextWrapper
 		pContext = nullptr;
 	}
 };
+
 void LogQueries(const char* severity, const std::wstring& xmlName) {
 	if (xmlName.find(L"logging") == std::wstring::npos) { 
 		int size_needed = WideCharToMultiByte(CP_UTF8, 0, xmlName.c_str(), (int)xmlName.size(), NULL, 0, NULL, NULL);
@@ -1496,8 +1500,13 @@ vector<string> split(string& input, char delimiter)
 void loadSettings() {
 	const wstring settingsname = confpath + L"\\vdd_settings.xml";
 	const wstring& filename = settingsname;
-	bool parseEdidRes = false; // Default to false unless specified in XML
+	bool parseEdidRes = false;
 	wstring resSort;
+
+
+	AdapterOption adapterOption;
+	ComPtr<ID3D11Device> device;
+	ComPtr<ID3D11DeviceContext> context;
 
 	if (PathFileExistsW(filename.c_str())) {
 		CComPtr<IStream> pStream;
@@ -1575,13 +1584,62 @@ void loadSettings() {
 				}
 				else if (currentElement == L"parse_edid_res") {
 					wstring value(pwszValue, cwchValue);
-					parseEdidRes = (value == L"true" || value == L"1"); // Accept "true" or "1"
+					parseEdidRes = (value == L"true" || value == L"1");
 				}
 				else if (currentElement == L"res-sort") {
 					resSort = wstring(pwszValue, cwchValue);
 				}
+				else if (currentElement == L"ShaderEnabled") {
+					wstring value(pwszValue, cwchValue);
+					ShaderEnabled = (value == L"true" || value == L"1");
+				}
+				else if (currentElement == L"ShaderName") {
+					shaderPathfile = confpath + L"\\" + L"Shaders" + L"\\" + wstring(pwszValue, cwchValue + L"_shader.h");
+					if (PathFileExistsW(shaderPathfile.c_str())) {
+						stringstream ss;
+						ss << "Shader file selected: " << WStringToString(shaderPathfile).c_str();
+						vddlog("i", ss.str().c_str());
+						ShaderShortName = wstring(pwszValue, cwchValue);
+					}
+					else {
+						vddlog("w", "Shader file not found; FrameHandler disabled.");
+						shaderPathfile.clear();
+					}
+				}
 				break;
 			}
+		}
+
+		if (!gpuFriendlyName.empty()) {
+			adapterOption.xmlprovide(gpuFriendlyName);
+		}
+		else {
+			adapterOption.load(filename.c_str());
+		}
+
+		ComPtr<IDXGIAdapter> selectedAdapter;
+		auto gpus = getAvailableGPUs();
+		for (const auto& gpu : gpus) {
+			if (gpu.desc.AdapterLuid.LowPart == adapterOption.adapterLuid.LowPart &&
+				gpu.desc.AdapterLuid.HighPart == adapterOption.adapterLuid.HighPart) {
+				selectedAdapter = gpu.adapter;
+				break;
+			}
+		}
+		if (!selectedAdapter) {
+			selectedAdapter = gpus.front().adapter;
+			vddlog("i", "No matching GPU found; using first available.");
+		}
+
+		hr = D3D11CreateDevice(selectedAdapter.Get(), D3D_DRIVER_TYPE_UNKNOWN, nullptr, 0, nullptr, 0, D3D11_SDK_VERSION, &device, nullptr, &context);
+		if (FAILED(hr)) {
+			vddlog("e", "Failed to create D3D11 device.");
+			return;
+		}
+
+		if (!shaderPathfile.empty()) {
+			FrameHandler::InitializeFrameHandler(device.Get(), context.Get(), shaderPathfile.c_str());
+			vddlog("i", "FrameHandler initialized with shader file.");
 		}
 
 		for (int globalRate : globalRefreshRates) {
@@ -1599,129 +1657,101 @@ void loadSettings() {
 		monitorModes = res;
 		vddlog("i", "Using vdd_settings.xml");
 	}
-	else {
-		const wstring optionsname = confpath + L"\\option.txt";
-		ifstream ifs(optionsname);
-		if (ifs.is_open()) {
-			string line;
-			if (getline(ifs, line) && !line.empty()) {
-				numVirtualDisplays = stoi(line);
-				vector<tuple<int, int, int, int>> res;
 
-				while (getline(ifs, line)) {
-					vector<string> strvec = split(line, ',');
-					if (strvec.size() == 3 && strvec[0].substr(0, 1) != "#") {
-						int vsync_num, vsync_den;
-						float_to_vsync(stof(strvec[2]), vsync_num, vsync_den);
-						res.push_back({ stoi(strvec[0]), stoi(strvec[1]), vsync_num, vsync_den });
-					}
-				}
-
-				vddlog("i", "Using option.txt");
-				monitorModes = res;
-				for (const auto& mode : res) {
-					int width, height, vsync_num, vsync_den;
-					tie(width, height, vsync_num, vsync_den) = mode;
-					stringstream ss;
-					ss << "Resolution: " << width << "x" << height << " @ " << vsync_num << "/" << vsync_den << "Hz";
-					vddlog("d", ss.str().c_str());
-				}
-			}
-			else {
-				vddlog("w", "option.txt is empty or the first line is invalid. Enabling Fallback");
-			}
-			ifs.close();
-		}
-		else {
-			numVirtualDisplays = 1;
+	const wstring optionsname = confpath + L"\\option.txt";
+	ifstream ifs(optionsname);
+	if (ifs.is_open()) {
+		string line;
+		if (getline(ifs, line) && !line.empty()) {
+			numVirtualDisplays = stoi(line);
 			vector<tuple<int, int, int, int>> res;
-			vector<tuple<int, int, float>> fallbackRes = {
-				{800, 600, 30.0f}, {800, 600, 60.0f}, {800, 600, 90.0f}, {800, 600, 120.0f}, {800, 600, 144.0f}, {800, 600, 165.0f},
-				{1280, 720, 30.0f}, {1280, 720, 60.0f}, {1280, 720, 90.0f}, {1280, 720, 130.0f}, {1280, 720, 144.0f}, {1280, 720, 165.0f},
-				{1366, 768, 30.0f}, {1366, 768, 60.0f}, {1366, 768, 90.0f}, {1366, 768, 120.0f}, {1366, 768, 144.0f}, {1366, 768, 165.0f},
-				{1920, 1080, 30.0f}, {1920, 1080, 60.0f}, {1920, 1080, 90.0f}, {1920, 1080, 120.0f}, {1920, 1080, 144.0f}, {1920, 1080, 165.0f},
-				{2560, 1440, 30.0f}, {2560, 1440, 60.0f}, {2560, 1440, 90.0f}, {2560, 1440, 120.0f}, {2560, 1440, 144.0f}, {2560, 1440, 165.0f},
-				{3840, 2160, 30.0f}, {3840, 2160, 60.0f}, {3840, 2160, 90.0f}, {3840, 2160, 120.0f}, {3840, 2160, 144.0f}, {3840, 2160, 165.0f}
-			};
 
-			vddlog("i", "Loading Fallback - no settings found");
-			for (const auto& mode : fallbackRes) {
-				int width, height;
-				float refreshRate;
-				tie(width, height, refreshRate) = mode;
-				int vsync_num, vsync_den;
-				float_to_vsync(refreshRate, vsync_num, vsync_den);
-				res.push_back(make_tuple(width, height, vsync_num, vsync_den));
+			while (getline(ifs, line)) {
+				vector<string> strvec = split(line, ',');
+				if (strvec.size() == 3 && strvec[0].substr(0, 1) != "#") {
+					int vsync_num, vsync_den;
+					float_to_vsync(stof(strvec[2]), vsync_num, vsync_den);
+					res.push_back({ stoi(strvec[0]), stoi(strvec[1]), vsync_num, vsync_den });
+				}
+			}
+
+			vddlog("i", "Using option.txt");
+			monitorModes = res;
+			for (const auto& mode : res) {
+				int width, height, vsync_num, vsync_den;
+				tie(width, height, vsync_num, vsync_den) = mode;
 				stringstream ss;
 				ss << "Resolution: " << width << "x" << height << " @ " << vsync_num << "/" << vsync_den << "Hz";
 				vddlog("d", ss.str().c_str());
 			}
-			monitorModes = res;
-		}
-	}
-
-	// EDID override: Only if <parse_edid_res>true</parse_edid_res> in XML and user_edid.bin exists
-	if (parseEdidRes) {
-		const wstring edidname = confpath + L"\\user_edid.bin";
-		if (PathFileExistsW(edidname.c_str())) {
-			try {
-				string edidPath = WStringToString(edidname); // Convert wstring to string using safe conversion
-				monitorModes = EdidParser::load_and_parse_edid(edidPath);
-				vddlog("i", "Overriding monitor modes with user_edid.bin (parse_edid_res = true)");
-				for (const auto& mode : monitorModes) {
-					int width, height, vsync_num, vsync_den;
-					tie(width, height, vsync_num, vsync_den) = mode;
-					stringstream ss;
-					ss << "EDID Resolution: " << width << "x" << height << " @ " << vsync_num << "/" << vsync_den << "Hz";
-					vddlog("d", ss.str().c_str());
-				}
-			}
-			catch (const std::exception& e) {
-				vddlog("e", ("EDID parsing failed: " + string(e.what())).c_str());
-				// Keep existing monitorModes (XML, option.txt, or fallback) on failure
-			}
+			return;
 		}
 		else {
-			vddlog("w", "parse_edid_res is true, but user_edid.bin not found; keeping current modes");
-		}
-		// Sort and cap monitorModes to 92, 
-		// Sort based on res-sort in xml, (x-desc | y-ass | ref.rate) defaults to x-desc
-		if (!monitorModes.empty()) {
-			// Parse res-sort value
-			bool descending = resSort.find(L"desc") != wstring::npos;
-			if (resSort.find(L"x") != wstring::npos) {
-				std::sort(monitorModes.begin(), monitorModes.end(),
-					[descending](const tuple<int, int, int, int>& a, const tuple<int, int, int, int>& b) {
-						return descending ? std::get<0>(a) > std::get<0>(b) : std::get<0>(a) < std::get<0>(b);
-					});
-			}
-			else if (resSort.find(L"y") != wstring::npos) {
-				std::sort(monitorModes.begin(), monitorModes.end(),
-					[descending](const tuple<int, int, int, int>& a, const tuple<int, int, int, int>& b) {
-						return descending ? std::get<1>(a) > std::get<1>(b) : std::get<1>(a) < std::get<1>(b);
-					});
-			}
-			else if (resSort.find(L"ref.rate") != wstring::npos) {
-				std::sort(monitorModes.begin(), monitorModes.end(),
-					[descending](const tuple<int, int, int, int>& a, const tuple<int, int, int, int>& b) {
-						return descending ? std::get<2>(a) > std::get<2>(b) : std::get<2>(a) < std::get<2>(b);
-					});
-			}
-			else {
-				// Default to x-desc if res-sort is invalid
-				std::sort(monitorModes.begin(), monitorModes.end(),
-					[](const tuple<int, int, int, int>& a, const tuple<int, int, int, int>& b) {
-						return std::get<0>(a) > std::get<0>(b);
-					});
-			}
-
-			// Cap at 92 modes, keeping highest values based on sort
-			if (monitorModes.size() > 92) {
-				monitorModes.resize(92);
-				vddlog("i", "Capped monitorModes to 92, removed lowest-value modes based on sort");
-			}
+			vddlog("w", "option.txt is empty or the first line is invalid. Enabling Fallback");
 		}
 	}
+
+	numVirtualDisplays = 1;
+	vector<tuple<int, int, int, int>> res;
+	vector<tuple<int, int, float>> fallbackRes = {
+		{800, 600, 30.0f},
+		{800, 600, 60.0f},
+		{800, 600, 90.0f},
+		{800, 600, 120.0f},
+		{800, 600, 144.0f},
+		{800, 600, 165.0f},
+		{1280, 720, 30.0f},
+		{1280, 720, 60.0f},
+		{1280, 720, 90.0f},
+		{1280, 720, 130.0f},
+		{1280, 720, 144.0f},
+		{1280, 720, 165.0f},
+		{1366, 768, 30.0f},
+		{1366, 768, 60.0f},
+		{1366, 768, 90.0f},
+		{1366, 768, 120.0f},
+		{1366, 768, 144.0f},
+		{1366, 768, 165.0f},
+		{1920, 1080, 30.0f},
+		{1920, 1080, 60.0f},
+		{1920, 1080, 90.0f},
+		{1920, 1080, 120.0f},
+		{1920, 1080, 144.0f},
+		{1920, 1080, 165.0f},
+		{2560, 1440, 30.0f},
+		{2560, 1440, 60.0f},
+		{2560, 1440, 90.0f},
+		{2560, 1440, 120.0f},
+		{2560, 1440, 144.0f},
+		{2560, 1440, 165.0f},
+		{3840, 2160, 30.0f},
+		{3840, 2160, 60.0f},
+		{3840, 2160, 90.0f},
+		{3840, 2160, 120.0f},
+		{3840, 2160, 144.0f},
+		{3840, 2160, 165.0f}
+	};
+
+	vddlog("i", "Loading Fallback - no settings found");
+
+	for (const auto& mode : fallbackRes) {
+		int width, height;
+		float refreshRate;
+		tie(width, height, refreshRate) = mode;
+
+		int vsync_num, vsync_den;
+		float_to_vsync(refreshRate, vsync_num, vsync_den);
+
+		stringstream ss;
+		res.push_back(make_tuple(width, height, vsync_num, vsync_den));
+
+
+		ss << "Resolution: " << width << "x" << height << " @ " << vsync_num << "/" << vsync_den << "Hz";
+		vddlog("d", ss.str().c_str());
+	}
+
+	monitorModes = res;
+	return;
 }
 
 _Use_decl_annotations_
@@ -2191,9 +2221,14 @@ void SwapChainProcessor::RunCore()
 		vddlog("e", logStream.str().c_str());
 		return;
 	}
-	logStream << "DXGI device interface obtained successfully.";
-	//vddlog("d", logStream.str().c_str());
 
+	// Initialize the frame handler if not already done
+	if (!FrameHandler::g_device) {
+		FrameHandler::InitializeFrameHandler(m_Device->Device.Get(), m_Device->DeviceContext.Get(), L"crt_shader");
+		logStream.str("");
+		logStream << "Frame handler initialized with CRT shader.";
+		vddlog("i", logStream.str().c_str());
+	}
 
 	IDARG_IN_SWAPCHAINSETDEVICE SetDevice = {};
 	SetDevice.pDevice = DxgiDevice.Get();
@@ -2206,10 +2241,19 @@ void SwapChainProcessor::RunCore()
 		vddlog("e", logStream.str().c_str());
 		return;
 	}
-	logStream << "Device set to swap chain successfully.";
-	//vddlog("d", logStream.str().c_str());
 
-	logStream.str(""); 
+	// Assign the swap chain to the frame handler
+	ComPtr<IDXGISwapChain> swapChain;
+	NTSTATUS status = FrameHandler::AssignSwapChain(m_hSwapChain, swapChain.Get());
+
+	if (status != STATUS_SUCCESS)
+	{
+		logStream.str("");
+		logStream << "Failed to assign swap chain to frame handler. NTSTATUS: " << status;
+		vddlog("e", logStream.str().c_str());
+	}
+
+	logStream.str("");
 	logStream << "Starting buffer acquisition and release loop.";
 	//vddlog("d", logStream.str().c_str());
 
@@ -2234,11 +2278,10 @@ void SwapChainProcessor::RunCore()
 			hr = IddCxSwapChainReleaseAndAcquireBuffer(m_hSwapChain, &Buffer);
 			pSurface = Buffer.MetaData.pSurface;
 		}
-		// AcquireBuffer immediately returns STATUS_PENDING if no buffer is yet available
-		logStream.str("");
+
 		if (hr == E_PENDING)
 		{
-			// We must wait for a new buffer
+			// Wait for a new buffer
 			HANDLE WaitHandles[] =
 			{
 				m_hAvailableBufferEvent,
@@ -2246,25 +2289,21 @@ void SwapChainProcessor::RunCore()
 			};
 			DWORD WaitResult = WaitForMultipleObjects(ARRAYSIZE(WaitHandles), WaitHandles, FALSE, 16);
 
-			logStream << "Buffer acquisition pending. WaitResult: " << WaitResult;
-
 			if (WaitResult == WAIT_OBJECT_0 || WaitResult == WAIT_TIMEOUT)
 			{
-				// We have a new buffer, so try the AcquireBuffer again
-				//vddlog("d", "New buffer trying aquire new buffer");
+				// Try again
 				continue;
 			}
 			else if (WaitResult == WAIT_OBJECT_0 + 1)
 			{
-				// We need to terminate
-				logStream << "Terminate event signaled. Exiting loop.";
-				//vddlog("d", logStream.str().c_str());
+				// Terminate
 				break;
 			}
 			else
 			{
-				// The wait was cancelled or something unexpected happened
+				// Error handling
 				hr = HRESULT_FROM_WIN32(WaitResult);
+				logStream.str("");
 				logStream << "Unexpected wait result. HRESULT: " << hr;
 				vddlog("e", logStream.str().c_str());
 				break;
@@ -2275,37 +2314,79 @@ void SwapChainProcessor::RunCore()
 			AcquiredBuffer.Attach(pSurface);
 
 			// ==============================
-			// TODO: Process the frame here
-			//
-			// This is the most performance-critical section of code in an IddCx driver. It's important that whatever
-			// is done with the acquired surface be finished as quickly as possible. This operation could be:
-			//  * a GPU copy to another buffer surface for later processing (such as a staging surface for mapping to CPU memory)
-			//  * a GPU encode operation
-			//  * a GPU VPBlt to another surface
-			//  * a GPU custom compute shader encode operation
+			// Process the frame here
 			// ==============================
+			if (FrameHandler::IsEnabled())
+			{
+				// Create a render target view for the acquired buffer
+				ComPtr<ID3D11Texture2D> texture;
+				hr = AcquiredBuffer.As(&texture);
 
-			AcquiredBuffer.Reset();
-			//vddlog("d", "Reset buffer");
-			hr = IddCxSwapChainFinishedProcessingFrame(m_hSwapChain);
+				if (SUCCEEDED(hr))
+				{
+					// Create RTV if needed
+					D3D11_RENDER_TARGET_VIEW_DESC rtvDesc = {};
+					rtvDesc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+					rtvDesc.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D;
+					rtvDesc.Texture2D.MipSlice = 0;
+
+					// Release previous RTV if any
+					if (FrameHandler::g_outputRTV)
+					{
+						FrameHandler::g_outputRTV->Release();
+						FrameHandler::g_outputRTV = nullptr;
+					}
+
+					hr = FrameHandler::g_device->CreateRenderTargetView(texture.Get(), &rtvDesc, &FrameHandler::g_outputRTV);
+
+					if (SUCCEEDED(hr))
+					{
+						// Get current time for shader animation
+						LARGE_INTEGER presentationTime;
+						QueryPerformanceCounter(&presentationTime);
+
+						// Process the frame with the shader
+						FrameHandler::ProcessFrame(m_hSwapChain, presentationTime);
+					}
+					else
+					{
+						// Failed to create RTV, just pass the frame through
+						logStream.str("");
+						logStream << "Failed to create render target view. HRESULT: " << hr;
+						vddlog("e", logStream.str().c_str());
+
+						AcquiredBuffer.Reset();
+						hr = IddCxSwapChainFinishedProcessingFrame(m_hSwapChain);
+					}
+				}
+				else
+				{
+					// Failed to get texture, just pass the frame through
+					logStream.str("");
+					logStream << "Failed to get texture from acquired buffer. HRESULT: " << hr;
+					vddlog("e", logStream.str().c_str());
+
+					AcquiredBuffer.Reset();
+					hr = IddCxSwapChainFinishedProcessingFrame(m_hSwapChain);
+				}
+			}
+			else
+			{
+				// Frame handler disabled, just pass the frame through
+				AcquiredBuffer.Reset();
+				hr = IddCxSwapChainFinishedProcessingFrame(m_hSwapChain);
+			}
+
 			if (FAILED(hr))
 			{
 				break;
 			}
-
-			// ==============================
-			// TODO: Report frame statistics once the asynchronous encode/send work is completed
-			//
-			// Drivers should report information about sub-frame timings, like encode time, send time, etc.
-			// ==============================
-			// IddCxSwapChainReportFrameStatistics(m_hSwapChain, ...);
 		}
 		else
 		{
-			logStream.str(""); // Clear the stream
-			logStream << "Failed to acquire buffer. Exiting loop. The swap-chain was likely abandoned (e.g. DXGI_ERROR_ACCESS_LOST) - HRESULT: " << hr;
+			logStream.str("");
+			logStream << "Failed to acquire buffer. Exiting loop. HRESULT: " << hr;
 			vddlog("e", logStream.str().c_str());
-			// The swap-chain was likely abandoned (e.g. DXGI_ERROR_ACCESS_LOST), so exit the processing loop
 			break;
 		}
 	}
@@ -2364,7 +2445,7 @@ void modifyEdid(vector<BYTE>& edid) {
 }
 
 void ARnullEdid(vector<BYTE>& edid) {
-	if (edid.size() < 12) {
+	if (edid.size() < 23) {
 		return;
 	}
 
@@ -2752,6 +2833,7 @@ void IndirectDeviceContext::UnassignSwapChain()
 #pragma region DDI Callbacks
 
 _Use_decl_annotations_
+_Use_decl_annotations_
 NTSTATUS VirtualDisplayDriverAdapterInitFinished(IDDCX_ADAPTER AdapterObject, const IDARG_IN_ADAPTER_INIT_FINISHED* pInArgs)
 {
 	// This is called when the OS has finished setting up the adapter for use by the IddCx driver. It's now possible
@@ -2770,11 +2852,10 @@ NTSTATUS VirtualDisplayDriverAdapterInitFinished(IDDCX_ADAPTER AdapterObject, co
 		vddlog("e", ss.str().c_str());
 	}
 	vddlog("i", "Finished Setting up adapter.");
-	
+
 
 	return STATUS_SUCCESS;
 }
-
 _Use_decl_annotations_
 NTSTATUS VirtualDisplayDriverAdapterCommitModes(IDDCX_ADAPTER AdapterObject, const IDARG_IN_COMMITMODES* pInArgs)
 {

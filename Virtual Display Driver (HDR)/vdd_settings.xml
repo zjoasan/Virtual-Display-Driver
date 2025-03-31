@@ -101,4 +101,6 @@
 	<!-- Sort order for videmodes, whenever there are more then 92 modes it will cut the last ones(lower res when x-desc) -->
 	<!-- Alternatives: x-desc, x-ass, y-desc, y-ass, ref.rate-desc, ref.rate-ass	-->
 	<res-sort>x-desc</res-sort>
+	<ShaderEnabled>false</ShaderEnabled>
+	<ShaderName>CRT</ShaderName>
 </vdd_settings>
