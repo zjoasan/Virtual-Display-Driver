@@ -1,0 +1,65 @@
+#pragma once
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+// Define the IOCTL control codes
+#define FILE_DEVICE_MTTVDD 0x8000
+
+// Function codes: 0x800 to 0x8FF for custom functions
+#define IOCTL_MTTVDD_FUNCTION_BASE 0x800
+
+// IOCTL commands
+#define IOCTL_MTTVDD_GET_VERSION           CTL_CODE(FILE_DEVICE_MTTVDD, IOCTL_MTTVDD_FUNCTION_BASE + 0, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_MTTVDD_CREATE_MONITOR        CTL_CODE(FILE_DEVICE_MTTVDD, IOCTL_MTTVDD_FUNCTION_BASE + 1, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_MTTVDD_DESTROY_MONITOR       CTL_CODE(FILE_DEVICE_MTTVDD, IOCTL_MTTVDD_FUNCTION_BASE + 2, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_MTTVDD_SET_MODE              CTL_CODE(FILE_DEVICE_MTTVDD, IOCTL_MTTVDD_FUNCTION_BASE + 3, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_MTTVDD_GET_MONITOR_COUNT     CTL_CODE(FILE_DEVICE_MTTVDD, IOCTL_MTTVDD_FUNCTION_BASE + 4, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_MTTVDD_SET_PREFERRED_MODE    CTL_CODE(FILE_DEVICE_MTTVDD, IOCTL_MTTVDD_FUNCTION_BASE + 5, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_MTTVDD_SET_GPU_PREFERENCE    CTL_CODE(FILE_DEVICE_MTTVDD, IOCTL_MTTVDD_FUNCTION_BASE + 6, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
+// Driver version information
+typedef struct _MTTVDD_VERSION_INFO {
+    ULONG MajorVersion;
+    ULONG MinorVersion;
+    ULONG BuildNumber;
+} MTTVDD_VERSION_INFO, *PMTTVDD_VERSION_INFO;
+
+// Structure for creating a monitor
+typedef struct _MTTVDD_CREATE_MONITOR {
+    ULONG Width;
+    ULONG Height;
+    ULONG RefreshRate;
+    GUID MonitorId;  // Optional monitor ID, can be zeroed for auto-generation
+} MTTVDD_CREATE_MONITOR, *PMTTVDD_CREATE_MONITOR;
+
+// Structure for destroying a monitor
+typedef struct _MTTVDD_DESTROY_MONITOR {
+    ULONG MonitorIndex;
+} MTTVDD_DESTROY_MONITOR, *PMTTVDD_DESTROY_MONITOR;
+
+// Structure for setting a monitor mode
+typedef struct _MTTVDD_SET_MODE {
+    ULONG MonitorIndex;
+    ULONG Width;
+    ULONG Height;
+    ULONG RefreshRate;
+} MTTVDD_SET_MODE, *PMTTVDD_SET_MODE;
+
+// Structure for setting a preferred mode
+typedef struct _MTTVDD_SET_PREFERRED_MODE {
+    ULONG MonitorIndex;
+    ULONG Width;
+    ULONG Height;
+    ULONG RefreshRate;
+} MTTVDD_SET_PREFERRED_MODE, *PMTTVDD_SET_PREFERRED_MODE;
+
+// Structure for setting GPU preference
+typedef struct _MTTVDD_SET_GPU_PREFERENCE {
+    LUID AdapterLuid;
+} MTTVDD_SET_GPU_PREFERENCE, *PMTTVDD_SET_GPU_PREFERENCE;
+
+#ifdef __cplusplus
+}
+#endif

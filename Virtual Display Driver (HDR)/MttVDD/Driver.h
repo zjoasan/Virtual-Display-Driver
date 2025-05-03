@@ -16,6 +16,28 @@
 #include <vector>
 
 #include "Trace.h"
+#include "mttvdd-ioctl.h"
+#include "Common.h"
+
+// Forward declaration for the IndirectDeviceContext class
+namespace Microsoft
+{
+    namespace IndirectDisp
+    {
+        class IndirectDeviceContext;
+    }
+}
+
+// Forward declarations for driver-defined context type
+struct IndirectDeviceContextWrapper
+{
+    Microsoft::IndirectDisp::IndirectDeviceContext* pContext;
+
+    void Cleanup();  // Just declare it, don't implement
+};
+
+// The WDF context access function is defined by WDF_DECLARE_CONTEXT_TYPE macro
+WDF_DECLARE_CONTEXT_TYPE(IndirectDeviceContextWrapper);
 
 namespace Microsoft
 {
@@ -85,18 +107,26 @@ namespace Microsoft
             void FinishInit();
 
             void CreateMonitor(unsigned int index);
+            NTSTATUS CreateMonitorWithParams(ULONG Width, ULONG Height, ULONG RefreshRate, GUID* MonitorId);
+            NTSTATUS DestroyMonitor(ULONG MonitorIndex);
+            NTSTATUS SetMonitorMode(ULONG MonitorIndex, ULONG Width, ULONG Height, ULONG RefreshRate);
+            NTSTATUS SetPreferredMode(ULONG MonitorIndex, ULONG Width, ULONG Height, ULONG RefreshRate);
+            NTSTATUS SetGpuPreference(LUID AdapterLuid);
+            ULONG GetMonitorCount();
 
             void AssignSwapChain(IDDCX_MONITOR& Monitor, IDDCX_SWAPCHAIN SwapChain, LUID RenderAdapter, HANDLE NewFrameEvent);
             void UnassignSwapChain();
 
         protected:
-
             WDFDEVICE m_WdfDevice;
             IDDCX_ADAPTER m_Adapter;
             IDDCX_MONITOR m_Monitor;
             IDDCX_MONITOR m_Monitor2;
 
             std::unique_ptr<SwapChainProcessor> m_ProcessingThread;
+            
+            // Store a list of connected monitors and their info
+            std::vector<std::pair<IDDCX_MONITOR, GUID>> m_Monitors;
 
         public:
             static const DISPLAYCONFIG_VIDEO_SIGNAL_INFO s_KnownMonitorModes[];
