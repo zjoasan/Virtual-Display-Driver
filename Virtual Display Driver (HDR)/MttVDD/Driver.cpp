@@ -79,10 +79,6 @@ EVT_IDD_CX_MONITOR_QUERY_TARGET_MODES2 VirtualDisplayDriverEvtIddCxMonitorQueryT
 EVT_IDD_CX_ADAPTER_COMMIT_MODES2 VirtualDisplayDriverEvtIddCxAdapterCommitModes2;
 
 EVT_IDD_CX_MONITOR_SET_GAMMA_RAMP VirtualDisplayDriverEvtIddCxMonitorSetGammaRamp;
-EVT_IDD_CX_DEVICE_IO_CONTROL MttVddEvtIoDeviceControl;
-
-// Forward declaration for IOCTL queue setup function
-NTSTATUS SetupIoctlQueue(WDFDEVICE Device);
 
 struct
 {
@@ -156,7 +152,16 @@ const char* XorCursorSupportLevelToString(IDDCX_XOR_CURSOR_SUPPORT level) {
 
 vector<unsigned char> Microsoft::IndirectDisp::IndirectDeviceContext::s_KnownMonitorEdid; //Changed to support static vector
 
+struct IndirectDeviceContextWrapper
+{
+	IndirectDeviceContext* pContext;
 
+	void Cleanup()
+	{
+		delete pContext;
+		pContext = nullptr;
+	}
+};
 void LogQueries(const char* severity, const std::wstring& xmlName) {
 	if (xmlName.find(L"logging") == std::wstring::npos) { 
 		int size_needed = WideCharToMultiByte(CP_UTF8, 0, xmlName.c_str(), (int)xmlName.size(), NULL, 0, NULL, NULL);
@@ -628,6 +633,10 @@ void InitializeD3DDeviceAndLogGPU() {
 	string logtext = "Retrieving D3D Device GPU: " + utf8_desc;
 	vddlog("i", logtext.c_str());
 }
+
+
+// This macro creates the methods for accessing an IndirectDeviceContextWrapper as a context for a WDF object
+WDF_DECLARE_CONTEXT_TYPE(IndirectDeviceContextWrapper);
 
 extern "C" BOOL WINAPI DllMain(
 	_In_ HINSTANCE hInstance,
@@ -1773,9 +1782,6 @@ NTSTATUS VirtualDisplayDriverDeviceAdd(WDFDRIVER Driver, PWDFDEVICE_INIT pDevice
 	IddConfig.EvtIddCxMonitorGetDefaultDescriptionModes = VirtualDisplayDriverMonitorGetDefaultModes;
 	IddConfig.EvtIddCxMonitorAssignSwapChain = VirtualDisplayDriverMonitorAssignSwapChain;
 	IddConfig.EvtIddCxMonitorUnassignSwapChain = VirtualDisplayDriverMonitorUnassignSwapChain;
-
-	// Enable IOCTL handling
-	IddConfig.EvtIddCxDeviceIoControl = MttVddEvtIoDeviceControl;
 
 	if (IDD_IS_FIELD_AVAILABLE(IDD_CX_CLIENT_CONFIG, EvtIddCxAdapterQueryTargetInfo))
 	{

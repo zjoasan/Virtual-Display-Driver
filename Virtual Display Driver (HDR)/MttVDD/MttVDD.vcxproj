@@ -36,16 +36,12 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Driver.cpp" />
-    <ClCompile Include="mttioctl.cpp">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</ExcludedFromBuild>
-    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\..\..\Downloads\wudfwdm.h">
       <DeploymentContent>true</DeploymentContent>
     </ClInclude>
     <ClInclude Include="Driver.h" />
-    <ClInclude Include="mttvdd-ioctl.h" />
     <ClInclude Include="Trace.h" />
   </ItemGroup>
   <ItemGroup>
