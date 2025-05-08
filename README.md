@@ -71,14 +71,11 @@ HDR Support Now Available for Windows 11 23H2+
   </tr>
 </table>
 
-## Developers
-
-- Shoutout to **[MikeTheTech](https://github.com/itsmikethetech)** Project Manager, Owner, and Programmer!
-- Shoutout to **[Bud](https://github.com/bud3699)** Old Lead Programmer and author of a ton of features, the companion & installer work.
-- Shoutout to **[zjoasan](https://github.com/zjoasan)** Programmer. For scripts, EDID integration, and parts of installer.
-
 ## Acknowledgements
 
+- Shoutout to **[MikeTheTech](https://github.com/itsmikethetech)** Project Manager, Owner, and Programmer
+- Shoutout to **[zjoasan](https://github.com/zjoasan)** Programmer. For scripts, EDID integration, and parts of installer.
+- Shoutout to **[Bud](https://github.com/bud3699)** Former Lead Programmer, has since left the project.
 - Shoutout to **[Roshkins](https://github.com/roshkins/IddSampleDriver)** for the original repo.
 - Shoutout to **[Baloukj](https://github.com/baloukj/IddSampleDriver)** for the 8-bit / 10-bit support. (Also, first to push the new Microsoft Driver public!)
 - Shoutout to **[Anakngtokwa](https://github.com/Anakngtokwa)** for assisting with finding driver sources.
