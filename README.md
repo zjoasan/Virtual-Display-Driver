@@ -53,12 +53,7 @@ HDR Support Now Available for Windows 11 23H2+
 
 ### Installation Video
 
-[![vidgit2](https://github.com/user-attachments/assets/f9135092-55dc-4311-bc9a-ebbbfbe60a85)](https://youtu.be/Oz_cfbfUx0E)
-
-## More Videos and Resources
-- 24.12.24 (Stable): MikeTheTech: [How to install the New Virtual Display Driver](https://youtu.be/Oz_cfbfUx0E)
-- 24.12.24 (Stable): MikeTheTech: [How to manually install the New Virtual Display Driver](https://youtu.be/sM9rNJWssAI)
-- 24.10.27 (Beta): [MikeTheTech: How to install a virtual display](https://youtu.be/byfBWDnToYk "How to install a virtual display")
+[![maxresdefault](https://github.com/user-attachments/assets/fa9bec7f-c6f4-4362-be11-8e5d43c326f1)](https://youtu.be/ChvucKHbwMo)
 
 ![Powerpoint](https://github.com/user-attachments/assets/9ac05776-36e1-4ba1-ac52-3f189dbd7730)
 
