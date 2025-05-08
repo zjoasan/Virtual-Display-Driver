@@ -115,8 +115,17 @@ jobs:
               ForEach-Object { $_ -replace '-x64', '-arm64' } | 
               Set-Content "inno-setup\Setup.iss"
 
-            if (Test-Path "inno-setup\input\Companion\VDDSysTray.exe") {Remove-Item "inno-setup\input\Companion\VDDSysTray.exe"}
-            copy "inno-setup\input\Companion\arm64\VDDSysTray.exe" "inno-setup\input\Companion\"
+            # VDDSysTray has been replaced with VDDControl
+            if (Test-Path "inno-setup\input\Companion\VDDControl.exe") {Remove-Item "inno-setup\input\Companion\VDDControl.exe"}
+            
+            # Check if ARM64 VDDControl exists before copying
+            if (Test-Path "inno-setup\input\Companion\arm64\VDDControl.exe") {
+              copy "inno-setup\input\Companion\arm64\VDDControl.exe" "inno-setup\input\Companion\"
+              Write-Host "Copied ARM64 VDDControl.exe"
+            } else {
+              Write-Host "Warning: ARM64 VDDControl.exe not found in inno-setup\input\Companion\arm64\"
+              dir "inno-setup\input\Companion" -Recurse
+            }
           }
 
       - name: Compile Installer
