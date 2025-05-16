@@ -1,12 +1,6 @@
 name: Virtual Audio Driver Building
 on:
   workflow_dispatch:
-  push:
-    branches: 
-      - master
-  pull_request:
-    branches:
-      - master
 jobs:
   build:
     runs-on: windows-latest
