@@ -104,59 +104,88 @@ jobs:
           Write-Host "WDK bin directory structure:"
           Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin" -Recurse -Depth 3 | Where-Object { $_.Name -like "*inf*" -or $_.FullName -like "*\x86\*" }
       
-      # Build x64 with full validation
+      # Build x64 with proper catalog generation
       - name: Build driver (x64)
         if: matrix.platform == 'x64'
         run: |
           cd "Virtual-Audio-Driver (Latest Stable)"
-          msbuild "VirtualAudioDriver.sln" /p:Configuration=${{ matrix.configuration }} /p:Platform=${{ matrix.platform }}
+          msbuild "VirtualAudioDriver.sln" /p:Configuration=${{ matrix.configuration }} /p:Platform=${{ matrix.platform }} /p:SignMode=Off /p:EnableInf2Cat=true
       
-      # Build ARM64 with validation completely disabled
+      # Build ARM64 with limited validation but proper catalog generation
       - name: Build driver (ARM64)
         if: matrix.platform == 'ARM64'
         run: |
-          # Skip validation completely for ARM64 builds
           cd "Virtual-Audio-Driver (Latest Stable)"
-          msbuild "VirtualAudioDriver.sln" /p:Configuration=${{ matrix.configuration }} /p:Platform=ARM64 /p:RunCodeAnalysis=false /p:DriverTargetPlatform=Universal /p:UseInfVerifierEx=false /p:ValidateDrivers=false /p:StampInf=false /p:ApiValidator_Enable=false /p:InfVerif_Enable=false /p:DisableVerification=true /p:SignMode=Off /p:ApiValidator_ExcludedTargets=ARM64 /p:EnableInf2cat=false
+          msbuild "VirtualAudioDriver.sln" /p:Configuration=${{ matrix.configuration }} /p:Platform=ARM64 /p:RunCodeAnalysis=false /p:DriverTargetPlatform=Universal /p:UseInfVerifierEx=false /p:ValidateDrivers=false /p:StampInf=false /p:ApiValidator_Enable=false /p:InfVerif_Enable=false /p:DisableVerification=true /p:SignMode=Off /p:ApiValidator_ExcludedTargets=ARM64 /p:EnableInf2Cat=true
       
-      # Manual deployment steps for ARM64
-      - name: Create ARM64 Package Directory Structure
-        if: matrix.platform == 'ARM64'
+      # Generate catalog file using inf2cat
+      - name: Generate Catalog File
         run: |
-          # Create package directory structure
           $packageDir = "Virtual-Audio-Driver (Latest Stable)\${{ matrix.platform }}\${{ matrix.configuration }}\package"
+          $infFile = "$packageDir\VirtualAudioDriver.inf"
+          
+          # Ensure package directory exists
           if (-not (Test-Path $packageDir)) {
             New-Item -Path $packageDir -ItemType Directory -Force
-            Write-Host "Created directory: $packageDir"
           }
           
-          # Copy SYS file if it exists
+          # Try to find inf2cat.exe in the WDK installation
+          $wdkPaths = @(
+            "C:\Program Files (x86)\Windows Kits\10\bin\x86",
+            "C:\Program Files (x86)\Windows Kits\10\bin\10.0.22000.0\x86",
+            "C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x86"
+          )
+          
+          $inf2catPath = $null
+          foreach ($path in $wdkPaths) {
+            $testPath = "$path\inf2cat.exe"
+            if (Test-Path $testPath) {
+              $inf2catPath = $testPath
+              break
+            }
+          }
+          
+          if ($inf2catPath -and (Test-Path $infFile)) {
+            Write-Host "Found inf2cat at: $inf2catPath"
+            $osArch = if (${{ matrix.platform }} -eq "ARM64") { "10_ARM64" } else { "10_x64" }
+            & $inf2catPath /driver:"$packageDir" /os:"$osArch" /verbose
+            Write-Host "Catalog generation completed"
+          } else {
+            Write-Host "WARNING: inf2cat.exe not found or INF file missing"
+          }
+      
+      # Additional package preparation steps
+      - name: Complete Package Preparation
+        run: |
+          $packageDir = "Virtual-Audio-Driver (Latest Stable)\${{ matrix.platform }}\${{ matrix.configuration }}\package"
+          
+          # Ensure package directory has all required files
           $sourceDir = "Virtual-Audio-Driver (Latest Stable)\Source\Main\${{ matrix.platform }}\${{ matrix.configuration }}"
+          
+          # Copy SYS file if it exists
           if (Test-Path "$sourceDir\VirtualAudioDriver.sys") {
             Copy-Item "$sourceDir\VirtualAudioDriver.sys" "$packageDir\" -Force
             Write-Host "Copied VirtualAudioDriver.sys to package directory"
-          } else {
-            Write-Host "WARNING: VirtualAudioDriver.sys not found in $sourceDir"
           }
           
           # Copy INF file if it exists, or from x64 build
-          $infSource = "Virtual-Audio-Driver (Latest Stable)\Source\Main\${{ matrix.platform }}\${{ matrix.configuration }}\VirtualAudioDriver.inf"
+          $infSource = "$sourceDir\VirtualAudioDriver.inf"
           $x64InfSource = "Virtual-Audio-Driver (Latest Stable)\Source\Main\x64\${{ matrix.configuration }}\VirtualAudioDriver.inf"
           
           if (Test-Path $infSource) {
             Copy-Item $infSource "$packageDir\" -Force
-            Write-Host "Copied VirtualAudioDriver.inf from ARM64 build"
+            Write-Host "Copied VirtualAudioDriver.inf from ${{ matrix.platform }} build"
           } elseif (Test-Path $x64InfSource) {
             Copy-Item $x64InfSource "$packageDir\" -Force
             Write-Host "Copied VirtualAudioDriver.inf from x64 build"
-          } else {
-            Write-Host "WARNING: VirtualAudioDriver.inf not found"
           }
           
-          # Create placeholder CAT file if needed
+          # Check if catalog file was generated, create placeholder if not
           if (-not (Test-Path "$packageDir\virtualaudiodriver.cat")) {
+            Write-Host "WARNING: Catalog file not generated, creating placeholder"
             [System.IO.File]::WriteAllBytes("$packageDir\virtualaudiodriver.cat", [byte[]]@(0x00))
-            Write-Host "Created placeholder virtualaudiodriver.cat file"
+          } else {
+            Write-Host "Catalog file exists: $packageDir\virtualaudiodriver.cat"
           }
       
       - name: List build directory
