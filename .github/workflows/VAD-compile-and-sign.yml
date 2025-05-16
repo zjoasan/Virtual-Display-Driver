@@ -249,43 +249,6 @@ jobs:
             ${{ vars.SIGNPATH_OUTPUT_DIR }}\VirtualAudioDriver.sys
             ${{ vars.SIGNPATH_OUTPUT_DIR }}\VirtualAudioDriver.inf
             ${{ vars.SIGNPATH_OUTPUT_DIR }}\virtualaudiodriver.cat
-            
-      - name: Prepare Setup Repository
-        run: |
-          git clone https://${{ secrets.READ_REPO }}@github.com/VirtualAudio/Virtual-Driver-Installer.git inno-setup 
-
-      - name: Prepare Setup 
-        run: |
-          copy "${{ vars.SIGNPATH_OUTPUT_DIR }}\*" inno-setup\input\
-          $platform = "${{ matrix.platform }}"
-          (Get-Content "inno-setup\Setup.iss") | 
-            ForEach-Object { $_ -replace '1.0.0', '${{ env.RELEASE_TAG }}' } | 
-            Set-Content "inno-setup\Setup.iss"
-            
-          if ($platform -eq 'ARM64') {
-            (Get-Content "inno-setup\Setup.iss") | 
-              ForEach-Object { $_ -replace 'x64compatible', 'arm64' } | 
-              Set-Content "inno-setup\Setup.iss"
-                
-            (Get-Content "inno-setup\Setup.iss") | 
-              ForEach-Object { $_ -replace '-x64', '-arm64' } | 
-              Set-Content "inno-setup\Setup.iss"
-
-            if (Test-Path "inno-setup\input\Companion\VADSysTray.exe") {Remove-Item "inno-setup\input\Companion\VADSysTray.exe"}
-            copy "inno-setup\input\Companion\arm64\VADSysTray.exe" "inno-setup\input\Companion\"
-          }
-
-      - name: Compile Installer
-        uses: Minionguyjpro/Inno-Setup-Action@v1.2.2
-        with:
-          path: inno-setup\Setup.iss
-          options: /O+
-
-      - name: Upload Installer as artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: Installer-${{ matrix.configuration }}-${{ matrix.platform }}
-          path: inno-setup\output\*.exe
 
   celebrate:
     needs: build-and-sign
