@@ -123,16 +123,15 @@ jobs:
       - name: Create ARM64 Package Directory Structure
         if: matrix.platform == 'ARM64'
         run: |
-          cd "Virtual-Audio-Driver (Latest Stable)"
           # Create package directory structure
-          $packageDir = "${{ matrix.platform }}\${{ matrix.configuration }}\package"
+          $packageDir = "Virtual-Audio-Driver (Latest Stable)\${{ matrix.platform }}\${{ matrix.configuration }}\package"
           if (-not (Test-Path $packageDir)) {
             New-Item -Path $packageDir -ItemType Directory -Force
             Write-Host "Created directory: $packageDir"
           }
           
           # Copy SYS file if it exists
-          $sourceDir = "Source\Main\${{ matrix.platform }}\${{ matrix.configuration }}"
+          $sourceDir = "Virtual-Audio-Driver (Latest Stable)\Source\Main\${{ matrix.platform }}\${{ matrix.configuration }}"
           if (Test-Path "$sourceDir\VirtualAudioDriver.sys") {
             Copy-Item "$sourceDir\VirtualAudioDriver.sys" "$packageDir\" -Force
             Write-Host "Copied VirtualAudioDriver.sys to package directory"
@@ -141,8 +140,8 @@ jobs:
           }
           
           # Copy INF file if it exists, or from x64 build
-          $infSource = "Source\Main\${{ matrix.platform }}\${{ matrix.configuration }}\VirtualAudioDriver.inf"
-          $x64InfSource = "Source\Main\x64\${{ matrix.configuration }}\VirtualAudioDriver.inf"
+          $infSource = "Virtual-Audio-Driver (Latest Stable)\Source\Main\${{ matrix.platform }}\${{ matrix.configuration }}\VirtualAudioDriver.inf"
+          $x64InfSource = "Virtual-Audio-Driver (Latest Stable)\Source\Main\x64\${{ matrix.configuration }}\VirtualAudioDriver.inf"
           
           if (Test-Path $infSource) {
             Copy-Item $infSource "$packageDir\" -Force
