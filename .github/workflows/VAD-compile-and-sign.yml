@@ -27,16 +27,16 @@ jobs:
       - name: Install Visual Studio 2022 dependencies
         run: |
           choco install visualstudio2022-workload-manageddesktop -y
-          if ($LASTEXITCODE -ne 0) { exit 1 }
+          if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 3010) { exit 1 }
           
           choco install visualstudio2022-workload-nativedesktop -y
-          if ($LASTEXITCODE -ne 0) { exit 1 }
+          if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 3010) { exit 1 }
           
           choco install visualstudio2022-workload-vctools -y
-          if ($LASTEXITCODE -ne 0) { exit 1 }
+          if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 3010) { exit 1 }
           
           choco install windowsdriverkit11 -y
-          if ($LASTEXITCODE -ne 0) { exit 1 }
+          if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 3010) { exit 1 }
       
       # Fix the WDK paths for InfVerif if needed - only for x64 builds
       - name: Fix WDK paths for InfVerif
