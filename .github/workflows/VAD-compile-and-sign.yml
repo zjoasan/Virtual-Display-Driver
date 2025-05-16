@@ -147,8 +147,8 @@ jobs:
           
           if ($inf2catPath -and (Test-Path $infFile)) {
             Write-Host "Found inf2cat at: $inf2catPath"
-            $osArch = if ("${{ matrix.platform }}" -eq "ARM64") { "10_ARM64" } else { "10_x64" }
-            & $inf2catPath /driver:"$packageDir" /os:"$osArch" /verbose
+            $osParam = if ("${{ matrix.platform }}" -eq "ARM64") { "10_ARM64,10_16299_ARM64" } else { "10_X64,10_16299_X64,10_17134_X64,10_17763_X64,10_18362_X64,10_19041_X64,10_22000_X64" }
+            & $inf2catPath /driver:"$packageDir" /os:$osParam /verbose
             Write-Host "Catalog generation completed"
           } else {
             Write-Host "WARNING: inf2cat.exe not found or INF file missing"
