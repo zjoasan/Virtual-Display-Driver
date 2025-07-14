@@ -1,0 +1,248 @@
+name: Build and Sign Virtual Drivers and Control Panel
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+  schedule:
+    - cron: '0 2 * * 0'  # Weekly builds
+
+env:
+  BUILD_CONFIGURATION: Release
+  BUILD_PLATFORM: x64
+
+jobs:
+  build-and-sign:
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    # Setup build environment
+    - name: Setup MSBuild
+      uses: microsoft/setup-msbuild@v1.3
+      
+    - name: Setup Windows SDK
+      uses: GuillaumeFalourd/setup-windows10-sdk-action@v1.11
+      with:
+        sdk-version: 22621
+        
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '6.0.x'
+        
+    # Build Virtual Display Driver
+    - name: Build Virtual Display Driver
+      run: |
+        if (Test-Path "Virtual Display Driver (HDR)/Virtual Display Driver (HDR).sln") {
+          Write-Output "Building Virtual Display Driver..."
+          msbuild "Virtual Display Driver (HDR)/Virtual Display Driver (HDR).sln" /p:Configuration=$env:BUILD_CONFIGURATION /p:Platform=$env:BUILD_PLATFORM
+          Write-Output "VDD build completed"
+        } else {
+          Write-Output "VDD solution file not found, skipping..."
+        }
+        
+    # Build Virtual Audio Driver
+    - name: Build Virtual Audio Driver
+      run: |
+        if (Test-Path "Virtual-Audio-Driver (Latest Stable)/Virtual-Audio-Driver (Latest Stable).sln") {
+          Write-Output "Building Virtual Audio Driver..."
+          msbuild "Virtual-Audio-Driver (Latest Stable)/Virtual-Audio-Driver (Latest Stable).sln" /p:Configuration=$env:BUILD_CONFIGURATION /p:Platform=$env:BUILD_PLATFORM
+          Write-Output "VAD build completed"
+        } else {
+          Write-Output "VAD solution file not found, skipping..."
+        }
+      continue-on-error: true
+      
+    # Build Control Panel (handles both same repo and separate repo scenarios)
+    - name: Checkout Control Panel Repository
+      if: github.repository != 'VirtualDrivers/Virtual-Driver-Control'
+      uses: actions/checkout@v4
+      with:
+        repository: 'VirtualDrivers/Virtual-Driver-Control'
+        path: 'control-panel-repo'
+        token: ${{ secrets.GITHUB_TOKEN }}
+      continue-on-error: true
+        
+    - name: Build Control Panel
+      run: |
+        $controlPanelPath = ""
+        
+        # Check if control panel is in current repo
+        if (Test-Path "VDD Control/VDD Control.sln") {
+          $controlPanelPath = "VDD Control/VDD Control.sln"
+          $projectPath = "VDD Control/VDD Control/VDD Control.csproj"
+          Write-Output "Found control panel in current repository"
+        } 
+        # Check if control panel was checked out separately
+        elseif (Test-Path "control-panel-repo/VDD Control/VDD Control.sln") {
+          $controlPanelPath = "control-panel-repo/VDD Control/VDD Control.sln"
+          $projectPath = "control-panel-repo/VDD Control/VDD Control/VDD Control.csproj"
+          Write-Output "Found control panel in separate repository"
+        }
+        
+        if ($controlPanelPath -ne "") {
+          Write-Output "Building Control Panel..."
+          dotnet restore $controlPanelPath
+          dotnet build $controlPanelPath --configuration $env:BUILD_CONFIGURATION --no-restore
+          dotnet publish $projectPath --configuration $env:BUILD_CONFIGURATION --output ./control-panel-publish --no-build
+          Write-Output "Control Panel build completed"
+        } else {
+          Write-Output "Control Panel solution file not found, skipping..."
+        }
+      continue-on-error: true
+      
+    # Package all artifacts
+    - name: Package Artifacts
+      run: |
+        Write-Output "Creating artifact packages..."
+        mkdir -Force artifacts, signpath-artifacts
+        
+        # Package VDD
+        if (Test-Path "Virtual Display Driver (HDR)/$env:BUILD_PLATFORM/$env:BUILD_CONFIGURATION/") {
+          Write-Output "Packaging Virtual Display Driver..."
+          7z a artifacts/VirtualDisplayDriver.zip "Virtual Display Driver (HDR)/$env:BUILD_PLATFORM/$env:BUILD_CONFIGURATION/*"
+          Copy-Item artifacts/VirtualDisplayDriver.zip signpath-artifacts/
+        }
+        
+        # Package VAD
+        if (Test-Path "Virtual-Audio-Driver (Latest Stable)/$env:BUILD_PLATFORM/$env:BUILD_CONFIGURATION/") {
+          Write-Output "Packaging Virtual Audio Driver..."
+          7z a artifacts/VirtualAudioDriver.zip "Virtual-Audio-Driver (Latest Stable)/$env:BUILD_PLATFORM/$env:BUILD_CONFIGURATION/*"
+          Copy-Item artifacts/VirtualAudioDriver.zip signpath-artifacts/
+        }
+        
+        # Package Control Panel
+        if (Test-Path "./control-panel-publish/") {
+          Write-Output "Packaging Control Panel..."
+          7z a artifacts/VirtualDriverControlPanel.zip "./control-panel-publish/*"
+          Copy-Item artifacts/VirtualDriverControlPanel.zip signpath-artifacts/
+        }
+        
+        Write-Output "Packaging completed"
+        
+    # Upload build artifacts (for all builds)
+    - name: Upload Build Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: virtual-drivers-build-${{ github.run_number }}
+        path: artifacts/
+        
+    # SignPath Integration (only for main branch and tags)
+    - name: Submit to SignPath for Signing
+      if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/')
+      run: |
+        Write-Output "Submitting artifacts to SignPath for signing..."
+        $headers = @{
+          'Authorization' = 'Bearer ${{ secrets.SIGNPATH_API_TOKEN }}'
+        }
+        $baseUrl = "https://app.signpath.io/api/v1/${{ secrets.SIGNPATH_ORGANIZATION_ID }}"
+        
+        # Submit VDD for signing
+        if (Test-Path "signpath-artifacts/VirtualDisplayDriver.zip") {
+          Write-Output "Submitting Virtual Display Driver to SignPath..."
+          try {
+            $vddResponse = Invoke-RestMethod -Uri "$baseUrl/SigningRequests" -Method Post -Headers $headers -Form @{
+              'ProjectSlug' = '${{ secrets.SIGNPATH_PROJECT_SLUG }}'
+              'SigningPolicySlug' = '${{ secrets.SIGNPATH_SIGNING_POLICY_SLUG }}'
+              'Artifact' = Get-Item "signpath-artifacts/VirtualDisplayDriver.zip"
+              'Description' = "Virtual Display Driver - Build ${{ github.run_number }} - ${{ github.sha }}"
+              'Origin.RepositoryUrl' = '${{ github.server_url }}/${{ github.repository }}'
+              'Origin.Ref' = '${{ github.ref }}'
+              'Origin.CommitId' = '${{ github.sha }}'
+            }
+            Write-Output "✅ VDD submitted to SignPath. Request ID: $($vddResponse.SigningRequestId)"
+            echo "VDD_SIGNING_REQUEST_ID=$($vddResponse.SigningRequestId)" >> $env:GITHUB_ENV
+          } catch {
+            Write-Output "❌ Failed to submit VDD to SignPath: $($_.Exception.Message)"
+          }
+        }
+        
+        # Submit VAD for signing
+        if (Test-Path "signpath-artifacts/VirtualAudioDriver.zip") {
+          Write-Output "Submitting Virtual Audio Driver to SignPath..."
+          try {
+            $vadResponse = Invoke-RestMethod -Uri "$baseUrl/SigningRequests" -Method Post -Headers $headers -Form @{
+              'ProjectSlug' = '${{ secrets.SIGNPATH_PROJECT_SLUG }}'
+              'SigningPolicySlug' = '${{ secrets.SIGNPATH_SIGNING_POLICY_SLUG }}'
+              'Artifact' = Get-Item "signpath-artifacts/VirtualAudioDriver.zip"
+              'Description' = "Virtual Audio Driver - Build ${{ github.run_number }} - ${{ github.sha }}"
+              'Origin.RepositoryUrl' = '${{ github.server_url }}/${{ github.repository }}'
+              'Origin.Ref' = '${{ github.ref }}'
+              'Origin.CommitId' = '${{ github.sha }}'
+            }
+            Write-Output "✅ VAD submitted to SignPath. Request ID: $($vadResponse.SigningRequestId)"
+            echo "VAD_SIGNING_REQUEST_ID=$($vadResponse.SigningRequestId)" >> $env:GITHUB_ENV
+          } catch {
+            Write-Output "❌ Failed to submit VAD to SignPath: $($_.Exception.Message)"
+          }
+        }
+        
+        # Submit Control Panel for signing
+        if (Test-Path "signpath-artifacts/VirtualDriverControlPanel.zip") {
+          Write-Output "Submitting Control Panel to SignPath..."
+          try {
+            $controlResponse = Invoke-RestMethod -Uri "$baseUrl/SigningRequests" -Method Post -Headers $headers -Form @{
+              'ProjectSlug' = '${{ secrets.SIGNPATH_PROJECT_SLUG }}'
+              'SigningPolicySlug' = '${{ secrets.SIGNPATH_SIGNING_POLICY_SLUG }}'
+              'Artifact' = Get-Item "signpath-artifacts/VirtualDriverControlPanel.zip"
+              'Description' = "Virtual Driver Control Panel - Build ${{ github.run_number }} - ${{ github.sha }}"
+              'Origin.RepositoryUrl' = '${{ github.server_url }}/${{ github.repository }}'
+              'Origin.Ref' = '${{ github.ref }}'
+              'Origin.CommitId' = '${{ github.sha }}'
+            }
+            Write-Output "✅ Control Panel submitted to SignPath. Request ID: $($controlResponse.SigningRequestId)"
+            echo "CONTROL_PANEL_SIGNING_REQUEST_ID=$($controlResponse.SigningRequestId)" >> $env:GITHUB_ENV
+          } catch {
+            Write-Output "❌ Failed to submit Control Panel to SignPath: $($_.Exception.Message)"
+          }
+        }
+        
+    # Create release on tag push
+    - name: Create Release
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v1
+      with:
+        files: artifacts/*
+        draft: true
+        body: |
+          ## Virtual Drivers Release ${{ github.ref_name }}
+          
+          Built from commit: ${{ github.sha }}
+          
+          ### Included Components:
+          - Virtual Display Driver (VDD)
+          - Virtual Audio Driver (VAD) 
+          - Virtual Driver Control Panel
+          
+          ### SignPath Signing Status:
+          - VDD Request ID: ${{ env.VDD_SIGNING_REQUEST_ID }}
+          - VAD Request ID: ${{ env.VAD_SIGNING_REQUEST_ID }}
+          - Control Panel Request ID: ${{ env.CONTROL_PANEL_SIGNING_REQUEST_ID }}
+          
+          **Note:** Artifacts will be code-signed via SignPath before final release.
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        
+    # Summary
+    - name: Build Summary
+      if: always()
+      run: |
+        Write-Output "=== Build Summary ==="
+        Write-Output "Build Configuration: $env:BUILD_CONFIGURATION"
+        Write-Output "Platform: $env:BUILD_PLATFORM"
+        Write-Output "Commit: ${{ github.sha }}"
+        Write-Output "Branch/Tag: ${{ github.ref }}"
+        
+        if (Test-Path "artifacts/") {
+          Write-Output "Built Artifacts:"
+          Get-ChildItem artifacts/ | ForEach-Object { Write-Output "  - $($_.Name)" }
+        }
+        
+        if ($env:VDD_SIGNING_REQUEST_ID) { Write-Output "VDD SignPath ID: $env:VDD_SIGNING_REQUEST_ID" }
+        if ($env:VAD_SIGNING_REQUEST_ID) { Write-Output "VAD SignPath ID: $env:VAD_SIGNING_REQUEST_ID" }
+        if ($env:CONTROL_PANEL_SIGNING_REQUEST_ID) { Write-Output "Control Panel SignPath ID: $env:CONTROL_PANEL_SIGNING_REQUEST_ID" }
