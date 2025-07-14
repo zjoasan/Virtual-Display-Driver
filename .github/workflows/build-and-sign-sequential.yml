@@ -1,0 +1,484 @@
+name: Build and Sign Virtual Drivers - Sequential
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+  schedule:
+    - cron: '0 2 * * 0'  # Weekly builds
+
+env:
+  BUILD_CONFIGURATION: Release
+
+jobs:
+  # Job 1: Build ARM64 components first
+  build-arm64:
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    # Setup build environment
+    - name: Setup MSBuild
+      uses: microsoft/setup-msbuild@v1
+      
+    - name: Install Visual Studio 2022 dependencies
+      run: |
+        choco install visualstudio2022-workload-manageddesktop -y
+        if ($LASTEXITCODE -ne 0) { exit 1 }
+        
+        choco install visualstudio2022-workload-nativedesktop -y
+        if ($LASTEXITCODE -ne 0) { exit 1 }
+        
+        choco install visualstudio2022-workload-vctools -y
+        if ($LASTEXITCODE -ne 0) { exit 1 }
+        
+        choco install windowsdriverkit11 -y
+        if ($LASTEXITCODE -ne 0) { exit 1 }
+        
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '6.0.x'
+        
+    # Build Virtual Display Driver for ARM64
+    - name: Build Virtual Display Driver (ARM64)
+      run: |
+        Write-Output "Building Virtual Display Driver (HDR) for ARM64..."
+        $vddSln = "Virtual Display Driver (HDR)/MTTVDD.sln"
+        if (Test-Path $vddSln) {
+          Write-Output "Found VDD solution: $vddSln"
+          Write-Output "Running MSBuild for ARM64..."
+          msbuild $vddSln /p:Configuration=$env:BUILD_CONFIGURATION /p:Platform=ARM64 /verbosity:minimal
+          if ($LASTEXITCODE -eq 0) {
+            Write-Output "✅ VDD build completed successfully for ARM64"
+          } else {
+            Write-Output "❌ VDD build failed with exit code: $LASTEXITCODE"
+            exit 1
+          }
+          
+          # List build directory
+          $buildDir = "Virtual Display Driver (HDR)\ARM64\$env:BUILD_CONFIGURATION\MttVDD"
+          if (Test-Path $buildDir) {
+            Write-Output "VDD Build outputs in ${buildDir}:"
+            Get-ChildItem $buildDir | ForEach-Object { Write-Output "  - $($_.Name)" }
+          } else {
+            Write-Output "❌ Build directory not found: ${buildDir}"
+            exit 1
+          }
+        } else {
+          Write-Output "❌ VDD solution file not found at: $vddSln"
+          exit 1
+        }
+        
+    # Build Virtual Audio Driver for ARM64
+    - name: Build Virtual Audio Driver (ARM64)
+      run: |
+        Write-Output "Building Virtual Audio Driver for ARM64..."
+        $vadSln = "Virtual-Audio-Driver (Latest Stable)/VirtualAudioDriver.sln"
+        if (Test-Path $vadSln) {
+          Write-Output "Found VAD solution: $vadSln"
+          Write-Output "Running MSBuild for ARM64..."
+          msbuild $vadSln /p:Configuration=$env:BUILD_CONFIGURATION /p:Platform=ARM64 /verbosity:minimal
+          if ($LASTEXITCODE -eq 0) {
+            Write-Output "✅ VAD build completed successfully for ARM64"
+          } else {
+            Write-Output "❌ VAD build failed with exit code: $LASTEXITCODE"
+            exit 1
+          }
+          
+          # List build outputs
+          Write-Output "Searching for VAD build outputs..."
+          Get-ChildItem -Path "Virtual-Audio-Driver (Latest Stable)" -Recurse -Include "*.sys", "*.inf", "*.cat", "*.dll" -ErrorAction SilentlyContinue | ForEach-Object {
+            Write-Output "  - $($_.FullName)"
+          }
+        } else {
+          Write-Output "❌ VAD solution file not found at: $vadSln"
+          exit 1
+        }
+      
+    # Build Control Panel (platform-independent, only build once)
+    - name: Checkout Control Panel Repository
+      if: github.repository != 'VirtualDrivers/Virtual-Driver-Control'
+      uses: actions/checkout@v4
+      with:
+        repository: 'VirtualDrivers/Virtual-Driver-Control'
+        path: 'control-panel-repo'
+        token: ${{ secrets.GITHUB_TOKEN }}
+      continue-on-error: true
+        
+    - name: Build Control Panel
+      run: |
+        $controlPanelPath = ""
+        
+        # Check if control panel is in current repo
+        if (Test-Path "VDD Control/VDD Control.sln") {
+          $controlPanelPath = "VDD Control/VDD Control.sln"
+          $projectPath = "VDD Control/VDD Control/VDD Control.csproj"
+          Write-Output "Found control panel in current repository"
+        } 
+        # Check if control panel was checked out separately
+        elseif (Test-Path "control-panel-repo/VDD Control/VDD Control.sln") {
+          $controlPanelPath = "control-panel-repo/VDD Control/VDD Control.sln"
+          $projectPath = "control-panel-repo/VDD Control/VDD Control/VDD Control.csproj"
+          Write-Output "Found control panel in separate repository"
+        }
+        
+        if ($controlPanelPath -ne "") {
+          Write-Output "Building Control Panel..."
+          dotnet restore $controlPanelPath
+          dotnet build $controlPanelPath --configuration $env:BUILD_CONFIGURATION --no-restore
+          dotnet publish $projectPath --configuration $env:BUILD_CONFIGURATION --output ./control-panel-publish --no-build
+          Write-Output "✅ Control Panel build completed"
+        } else {
+          Write-Output "❌ Control Panel solution file not found"
+          exit 1
+        }
+      
+    # Package ARM64 components
+    - name: Package ARM64 components
+      run: |
+        Write-Output "Creating ARM64 package..."
+        $packageDir = "arm64-components"
+        New-Item -ItemType Directory -Path $packageDir -Force
+        
+        # Create component directories
+        $vddDir = "$packageDir\VDD"
+        $vadDir = "$packageDir\VAD"
+        $controlDir = "$packageDir\ControlPanel"
+        New-Item -ItemType Directory -Path $vddDir -Force
+        New-Item -ItemType Directory -Path $vadDir -Force
+        New-Item -ItemType Directory -Path $controlDir -Force
+        
+        # Copy VDD ARM64 files
+        $vddBuildDir = "Virtual Display Driver (HDR)\ARM64\$env:BUILD_CONFIGURATION\MttVDD"
+        if (Test-Path $vddBuildDir) {
+          Copy-Item "$vddBuildDir\*" -Destination $vddDir -Force
+          Write-Output "✅ Copied VDD ARM64 files"
+        }
+        
+        # Copy VAD ARM64 files
+        $vadFiles = Get-ChildItem -Path "Virtual-Audio-Driver (Latest Stable)" -Recurse -Include "*.sys", "*.inf", "*.cat", "*.dll" -ErrorAction SilentlyContinue
+        foreach ($file in $vadFiles) {
+          Copy-Item $file.FullName -Destination $vadDir -Force
+        }
+        Write-Output "✅ Copied VAD ARM64 files"
+        
+        # Copy Control Panel files
+        if (Test-Path "control-panel-publish") {
+          Copy-Item "control-panel-publish\*" -Destination $controlDir -Recurse -Force
+          Write-Output "✅ Copied Control Panel files"
+        }
+        
+        Write-Output "ARM64_PACKAGE_DIR=$packageDir" >> $env:GITHUB_ENV
+      
+    # Upload ARM64 artifacts
+    - name: Upload ARM64 components
+      uses: actions/upload-artifact@v4
+      with:
+        name: ARM64-Components-${{ env.BUILD_CONFIGURATION }}
+        path: ${{ env.ARM64_PACKAGE_DIR }}
+        retention-days: 1
+
+  # Job 2: Build x64 components (depends on ARM64 completion)
+  build-x64:
+    needs: build-arm64
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    # Setup build environment
+    - name: Setup MSBuild
+      uses: microsoft/setup-msbuild@v1
+      
+    - name: Install Visual Studio 2022 dependencies
+      run: |
+        choco install visualstudio2022-workload-manageddesktop -y
+        if ($LASTEXITCODE -ne 0) { exit 1 }
+        
+        choco install visualstudio2022-workload-nativedesktop -y
+        if ($LASTEXITCODE -ne 0) { exit 1 }
+        
+        choco install visualstudio2022-workload-vctools -y
+        if ($LASTEXITCODE -ne 0) { exit 1 }
+        
+        choco install windowsdriverkit11 -y
+        if ($LASTEXITCODE -ne 0) { exit 1 }
+        
+    # Build Virtual Display Driver for x64
+    - name: Build Virtual Display Driver (x64)
+      run: |
+        Write-Output "Building Virtual Display Driver (HDR) for x64..."
+        $vddSln = "Virtual Display Driver (HDR)/MTTVDD.sln"
+        if (Test-Path $vddSln) {
+          Write-Output "Found VDD solution: $vddSln"
+          Write-Output "Running MSBuild for x64..."
+          msbuild $vddSln /p:Configuration=$env:BUILD_CONFIGURATION /p:Platform=x64 /verbosity:minimal
+          if ($LASTEXITCODE -eq 0) {
+            Write-Output "✅ VDD build completed successfully for x64"
+          } else {
+            Write-Output "❌ VDD build failed with exit code: $LASTEXITCODE"
+            exit 1
+          }
+          
+          # List build directory
+          $buildDir = "Virtual Display Driver (HDR)\x64\$env:BUILD_CONFIGURATION\MttVDD"
+          if (Test-Path $buildDir) {
+            Write-Output "VDD Build outputs in ${buildDir}:"
+            Get-ChildItem $buildDir | ForEach-Object { Write-Output "  - $($_.Name)" }
+          } else {
+            Write-Output "❌ Build directory not found: ${buildDir}"
+            exit 1
+          }
+        } else {
+          Write-Output "❌ VDD solution file not found at: $vddSln"
+          exit 1
+        }
+        
+    # Build Virtual Audio Driver for x64
+    - name: Build Virtual Audio Driver (x64)
+      run: |
+        Write-Output "Building Virtual Audio Driver for x64..."
+        $vadSln = "Virtual-Audio-Driver (Latest Stable)/VirtualAudioDriver.sln"
+        if (Test-Path $vadSln) {
+          Write-Output "Found VAD solution: $vadSln"
+          Write-Output "Running MSBuild for x64..."
+          msbuild $vadSln /p:Configuration=$env:BUILD_CONFIGURATION /p:Platform=x64 /verbosity:minimal
+          if ($LASTEXITCODE -eq 0) {
+            Write-Output "✅ VAD build completed successfully for x64"
+          } else {
+            Write-Output "❌ VAD build failed with exit code: $LASTEXITCODE"
+            exit 1
+          }
+          
+          # List build outputs
+          Write-Output "Searching for VAD build outputs..."
+          Get-ChildItem -Path "Virtual-Audio-Driver (Latest Stable)" -Recurse -Include "*.sys", "*.inf", "*.cat", "*.dll" -ErrorAction SilentlyContinue | ForEach-Object {
+            Write-Output "  - $($_.FullName)"
+          }
+        } else {
+          Write-Output "❌ VAD solution file not found at: $vadSln"
+          exit 1
+        }
+      
+    # Package x64 components
+    - name: Package x64 components
+      run: |
+        Write-Output "Creating x64 package..."
+        $packageDir = "x64-components"
+        New-Item -ItemType Directory -Path $packageDir -Force
+        
+        # Create component directories
+        $vddDir = "$packageDir\VDD"
+        $vadDir = "$packageDir\VAD"
+        New-Item -ItemType Directory -Path $vddDir -Force
+        New-Item -ItemType Directory -Path $vadDir -Force
+        
+        # Copy VDD x64 files
+        $vddBuildDir = "Virtual Display Driver (HDR)\x64\$env:BUILD_CONFIGURATION\MttVDD"
+        if (Test-Path $vddBuildDir) {
+          Copy-Item "$vddBuildDir\*" -Destination $vddDir -Force
+          Write-Output "✅ Copied VDD x64 files"
+        }
+        
+        # Copy VAD x64 files
+        $vadFiles = Get-ChildItem -Path "Virtual-Audio-Driver (Latest Stable)" -Recurse -Include "*.sys", "*.inf", "*.cat", "*.dll" -ErrorAction SilentlyContinue
+        foreach ($file in $vadFiles) {
+          Copy-Item $file.FullName -Destination $vadDir -Force
+        }
+        Write-Output "✅ Copied VAD x64 files"
+        
+        Write-Output "X64_PACKAGE_DIR=$packageDir" >> $env:GITHUB_ENV
+      
+    # Upload x64 artifacts
+    - name: Upload x64 components
+      uses: actions/upload-artifact@v4
+      with:
+        name: X64-Components-${{ env.BUILD_CONFIGURATION }}
+        path: ${{ env.X64_PACKAGE_DIR }}
+        retention-days: 1
+
+  # Job 3: Unified packaging and signing (depends on both builds)
+  package-and-sign:
+    needs: [build-arm64, build-x64]
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    # Download ARM64 artifacts
+    - name: Download ARM64 components
+      uses: actions/download-artifact@v4
+      with:
+        name: ARM64-Components-${{ env.BUILD_CONFIGURATION }}
+        path: arm64-components
+        
+    # Download x64 artifacts
+    - name: Download x64 components
+      uses: actions/download-artifact@v4
+      with:
+        name: X64-Components-${{ env.BUILD_CONFIGURATION }}
+        path: x64-components
+        
+    # Create unified package for signing
+    - name: Create unified package for SignPath
+      run: |
+        Write-Output "Creating unified package for signing..."
+        $unifiedDir = "unified-driver-package"
+        New-Item -ItemType Directory -Path $unifiedDir -Force
+        
+        # Create platform-specific directories
+        $arm64Dir = "$unifiedDir\ARM64"
+        $x64Dir = "$unifiedDir\x64"
+        New-Item -ItemType Directory -Path $arm64Dir -Force
+        New-Item -ItemType Directory -Path $x64Dir -Force
+        
+        # Create component subdirectories for each platform
+        foreach ($platform in @("ARM64", "x64")) {
+          $platformDir = "$unifiedDir\$platform"
+          New-Item -ItemType Directory -Path "$platformDir\VDD" -Force
+          New-Item -ItemType Directory -Path "$platformDir\VAD" -Force
+          if ($platform -eq "ARM64") {
+            New-Item -ItemType Directory -Path "$platformDir\ControlPanel" -Force
+          }
+        }
+        
+        # Copy ARM64 components
+        if (Test-Path "arm64-components\VDD") {
+          Copy-Item "arm64-components\VDD\*" -Destination "$arm64Dir\VDD" -Force
+          Write-Output "✅ Copied ARM64 VDD files"
+        }
+        if (Test-Path "arm64-components\VAD") {
+          Copy-Item "arm64-components\VAD\*" -Destination "$arm64Dir\VAD" -Force
+          Write-Output "✅ Copied ARM64 VAD files"
+        }
+        if (Test-Path "arm64-components\ControlPanel") {
+          Copy-Item "arm64-components\ControlPanel\*" -Destination "$arm64Dir\ControlPanel" -Recurse -Force
+          Write-Output "✅ Copied Control Panel files to ARM64 package"
+        }
+        
+        # Copy x64 components
+        if (Test-Path "x64-components\VDD") {
+          Copy-Item "x64-components\VDD\*" -Destination "$x64Dir\VDD" -Force
+          Write-Output "✅ Copied x64 VDD files"
+        }
+        if (Test-Path "x64-components\VAD") {
+          Copy-Item "x64-components\VAD\*" -Destination "$x64Dir\VAD" -Force
+          Write-Output "✅ Copied x64 VAD files"
+        }
+        
+        # Copy Control Panel to x64 as well (shared component)
+        if (Test-Path "arm64-components\ControlPanel") {
+          Copy-Item "arm64-components\ControlPanel\*" -Destination "$x64Dir\ControlPanel" -Recurse -Force
+          Write-Output "✅ Copied Control Panel files to x64 package"
+        }
+        
+        # Display final package structure
+        Write-Output ""
+        Write-Output "=== Final Unified Package Structure ==="
+        Get-ChildItem $unifiedDir -Recurse | ForEach-Object {
+          $relativePath = $_.FullName.Substring($unifiedDir.Length + 1)
+          if ($_.PSIsContainer) {
+            Write-Output "📁 $relativePath/"
+          } else {
+            Write-Output "📄 $relativePath"
+          }
+        }
+        
+        # Create ZIP file
+        $zipFile = "unified-driver-package-all-platforms.zip"
+        Write-Output ""
+        Write-Output "Creating unified ZIP file: $zipFile"
+        Compress-Archive -Path $unifiedDir -DestinationPath $zipFile -Force
+        
+        if (Test-Path $zipFile) {
+          $zipSize = (Get-Item $zipFile).Length
+          Write-Output "✅ Unified package created successfully: $zipFile (${zipSize} bytes)"
+          Write-Output "UNIFIED_PACKAGE_PATH=$zipFile" >> $env:GITHUB_ENV
+        } else {
+          Write-Output "❌ Failed to create unified package"
+          exit 1
+        }
+        
+    # Upload unified package
+    - name: Upload unified package
+      id: upload_unified_package
+      uses: actions/upload-artifact@v4
+      with:
+        name: Unified-Driver-Package-All-Platforms-${{ env.BUILD_CONFIGURATION }}
+        path: ${{ env.UNIFIED_PACKAGE_PATH }}
+        
+    # Generate release tag
+    - name: Generate release tag
+      id: generate_tag
+      run: |
+        $releaseTag = (Get-Date).ToString('yy.MM.dd')
+        Write-Output "Generated release tag: $releaseTag"
+        echo "RELEASE_TAG=$releaseTag" >> $env:GITHUB_ENV
+        
+    # Submit unified package to SignPath (only for main branch and tags)
+    - name: Submit unified package to SignPath for signing
+      if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/')) && steps.upload_unified_package.outputs.artifact-id != ''
+      id: signpath_unified_request
+      uses: signpath/github-action-submit-signing-request@v1
+      with:
+        api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
+        organization-id: '${{ vars.SIGNPATH_ORG_ID }}'
+        project-slug: '${{ vars.SIGNPATH_PROJECT_SLUG }}'
+        signing-policy-slug: '${{ vars.SIGNPATH_POLICY_SLUG }}'
+        github-artifact-id: '${{ steps.upload_unified_package.outputs.artifact-id }}'
+        wait-for-completion: true
+        output-artifact-directory: '${{ vars.SIGNPATH_OUTPUT_DIR }}'
+        parameters: |
+          Version: ${{ toJSON(env.BUILD_CONFIGURATION) }}
+          Release_Tag: "${{ env.RELEASE_TAG }}"
+          Platforms: "ARM64,x64"
+      continue-on-error: true
+      
+    # Upload signed unified package
+    - name: Upload signed unified package
+      if: steps.signpath_unified_request.outcome == 'success'
+      uses: actions/upload-artifact@v4
+      with:
+        name: Signed-Unified-Package-All-Platforms-${{ env.BUILD_CONFIGURATION }}
+        path: '${{ vars.SIGNPATH_OUTPUT_DIR }}\*'
+      continue-on-error: true
+        
+    # Build Summary
+    - name: Build and SignPath Summary
+      if: always()
+      run: |
+        Write-Output "=== Virtual Drivers Sequential Build & Sign Summary ==="
+        Write-Output "Configuration: $env:BUILD_CONFIGURATION"
+        Write-Output "Platforms: ARM64, x64"
+        Write-Output "Release Tag: ${{ env.RELEASE_TAG }}"
+        Write-Output "Commit: ${{ github.sha }}"
+        Write-Output "Branch/Tag: ${{ github.ref }}"
+        Write-Output ""
+        Write-Output "Build Strategy: Sequential (ARM64 → x64 → Unified Signing)"
+        Write-Output ""
+        Write-Output "This workflow successfully:"
+        Write-Output "✅ Built ARM64 drivers first (VDD + VAD + Control Panel)"
+        Write-Output "✅ Built x64 drivers after ARM64 completion (VDD + VAD)"
+        Write-Output "✅ Created unified package containing all platforms and components"
+        Write-Output "✅ Submitted single unified package to SignPath for code signing"
+        Write-Output "✅ Generated automatic release tags for version tracking"
+        Write-Output ""
+        Write-Output "Benefits of Sequential Approach:"
+        Write-Output "• Resource efficiency - no parallel builds"
+        Write-Output "• Better error isolation - ARM64 failure stops x64 build"
+        Write-Output "• Single SignPath submission for all platforms"
+        Write-Output "• Consolidated artifact management"
+        Write-Output ""
+        Write-Output "SignPath Integration Status:"
+        if ('${{ steps.signpath_unified_request.outcome }}' -eq 'success') { 
+          Write-Output "✅ Unified package (all platforms) submitted and signed successfully"
+        } else { 
+          Write-Output "❌ Unified package signing failed or skipped"
+        }
