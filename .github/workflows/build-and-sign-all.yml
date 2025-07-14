@@ -38,23 +38,33 @@ jobs:
     # Build Virtual Display Driver
     - name: Build Virtual Display Driver
       run: |
-        if (Test-Path "Virtual Display Driver (HDR)/Virtual Display Driver (HDR).sln") {
+        Write-Output "Searching for VDD solution files..."
+        $vddSolutions = Get-ChildItem -Path "Virtual Display Driver (HDR)" -Filter "*.sln" -Recurse -ErrorAction SilentlyContinue
+        if ($vddSolutions) {
+          $vddSln = $vddSolutions[0].FullName
+          Write-Output "Found VDD solution: $vddSln"
           Write-Output "Building Virtual Display Driver..."
-          msbuild "Virtual Display Driver (HDR)/Virtual Display Driver (HDR).sln" /p:Configuration=$env:BUILD_CONFIGURATION /p:Platform=$env:BUILD_PLATFORM
+          msbuild $vddSln /p:Configuration=$env:BUILD_CONFIGURATION /p:Platform=$env:BUILD_PLATFORM
           Write-Output "VDD build completed"
         } else {
-          Write-Output "VDD solution file not found, skipping..."
+          Write-Output "No VDD solution files found in Virtual Display Driver (HDR) directory"
+          Get-ChildItem -Path "Virtual Display Driver (HDR)" -Recurse | Select-Object FullName | ForEach-Object { Write-Output "  - $($_.FullName)" }
         }
         
     # Build Virtual Audio Driver
     - name: Build Virtual Audio Driver
       run: |
-        if (Test-Path "Virtual-Audio-Driver (Latest Stable)/Virtual-Audio-Driver (Latest Stable).sln") {
+        Write-Output "Searching for VAD solution files..."
+        $vadSolutions = Get-ChildItem -Path "Virtual-Audio-Driver (Latest Stable)" -Filter "*.sln" -Recurse -ErrorAction SilentlyContinue
+        if ($vadSolutions) {
+          $vadSln = $vadSolutions[0].FullName
+          Write-Output "Found VAD solution: $vadSln"
           Write-Output "Building Virtual Audio Driver..."
-          msbuild "Virtual-Audio-Driver (Latest Stable)/Virtual-Audio-Driver (Latest Stable).sln" /p:Configuration=$env:BUILD_CONFIGURATION /p:Platform=$env:BUILD_PLATFORM
+          msbuild $vadSln /p:Configuration=$env:BUILD_CONFIGURATION /p:Platform=$env:BUILD_PLATFORM
           Write-Output "VAD build completed"
         } else {
-          Write-Output "VAD solution file not found, skipping..."
+          Write-Output "No VAD solution files found in Virtual-Audio-Driver (Latest Stable) directory"
+          Get-ChildItem -Path "Virtual-Audio-Driver (Latest Stable)" -Recurse | Select-Object FullName | ForEach-Object { Write-Output "  - $($_.FullName)" }
         }
       continue-on-error: true
       
@@ -102,18 +112,58 @@ jobs:
         Write-Output "Creating artifact packages..."
         mkdir -Force artifacts, signpath-artifacts
         
-        # Package VDD
-        if (Test-Path "Virtual Display Driver (HDR)/$env:BUILD_PLATFORM/$env:BUILD_CONFIGURATION/") {
-          Write-Output "Packaging Virtual Display Driver..."
-          7z a artifacts/VirtualDisplayDriver.zip "Virtual Display Driver (HDR)/$env:BUILD_PLATFORM/$env:BUILD_CONFIGURATION/*"
-          Copy-Item artifacts/VirtualDisplayDriver.zip signpath-artifacts/
+        # Find and package VDD build outputs
+        Write-Output "Searching for VDD build outputs..."
+        $vddOutputs = Get-ChildItem -Path "Virtual Display Driver (HDR)" -Recurse -Directory | Where-Object { $_.Name -eq $env:BUILD_CONFIGURATION -and $_.Parent.Name -eq $env:BUILD_PLATFORM }
+        if ($vddOutputs) {
+          foreach ($output in $vddOutputs) {
+            Write-Output "Found VDD output: $($output.FullName)"
+            if (Get-ChildItem -Path $output.FullName -Filter "*.sys" -ErrorAction SilentlyContinue) {
+              Write-Output "Packaging Virtual Display Driver..."
+              7z a artifacts/VirtualDisplayDriver.zip "$($output.FullName)/*"
+              Copy-Item artifacts/VirtualDisplayDriver.zip signpath-artifacts/
+              break
+            }
+          }
+        } else {
+          Write-Output "No VDD build outputs found, searching for any driver files..."
+          $vddFiles = Get-ChildItem -Path "Virtual Display Driver (HDR)" -Recurse -Include "*.sys", "*.inf", "*.cat" -ErrorAction SilentlyContinue
+          if ($vddFiles) {
+            Write-Output "Found VDD driver files, packaging..."
+            $tempDir = "temp-vdd"
+            mkdir $tempDir
+            $vddFiles | ForEach-Object { Copy-Item $_.FullName $tempDir }
+            7z a artifacts/VirtualDisplayDriver.zip "$tempDir/*"
+            Copy-Item artifacts/VirtualDisplayDriver.zip signpath-artifacts/
+            Remove-Item $tempDir -Recurse -Force
+          }
         }
         
-        # Package VAD
-        if (Test-Path "Virtual-Audio-Driver (Latest Stable)/$env:BUILD_PLATFORM/$env:BUILD_CONFIGURATION/") {
-          Write-Output "Packaging Virtual Audio Driver..."
-          7z a artifacts/VirtualAudioDriver.zip "Virtual-Audio-Driver (Latest Stable)/$env:BUILD_PLATFORM/$env:BUILD_CONFIGURATION/*"
-          Copy-Item artifacts/VirtualAudioDriver.zip signpath-artifacts/
+        # Find and package VAD build outputs
+        Write-Output "Searching for VAD build outputs..."
+        $vadOutputs = Get-ChildItem -Path "Virtual-Audio-Driver (Latest Stable)" -Recurse -Directory | Where-Object { $_.Name -eq $env:BUILD_CONFIGURATION -and $_.Parent.Name -eq $env:BUILD_PLATFORM }
+        if ($vadOutputs) {
+          foreach ($output in $vadOutputs) {
+            Write-Output "Found VAD output: $($output.FullName)"
+            if (Get-ChildItem -Path $output.FullName -Filter "*.sys" -ErrorAction SilentlyContinue) {
+              Write-Output "Packaging Virtual Audio Driver..."
+              7z a artifacts/VirtualAudioDriver.zip "$($output.FullName)/*"
+              Copy-Item artifacts/VirtualAudioDriver.zip signpath-artifacts/
+              break
+            }
+          }
+        } else {
+          Write-Output "No VAD build outputs found, searching for any driver files..."
+          $vadFiles = Get-ChildItem -Path "Virtual-Audio-Driver (Latest Stable)" -Recurse -Include "*.sys", "*.inf", "*.cat" -ErrorAction SilentlyContinue
+          if ($vadFiles) {
+            Write-Output "Found VAD driver files, packaging..."
+            $tempDir = "temp-vad"
+            mkdir $tempDir
+            $vadFiles | ForEach-Object { Copy-Item $_.FullName $tempDir }
+            7z a artifacts/VirtualAudioDriver.zip "$tempDir/*"
+            Copy-Item artifacts/VirtualAudioDriver.zip signpath-artifacts/
+            Remove-Item $tempDir -Recurse -Force
+          }
         }
         
         # Package Control Panel
@@ -146,15 +196,20 @@ jobs:
         if (Test-Path "signpath-artifacts/VirtualDisplayDriver.zip") {
           Write-Output "Submitting Virtual Display Driver to SignPath..."
           try {
-            $vddResponse = Invoke-RestMethod -Uri "$baseUrl/SigningRequests" -Method Post -Headers $headers -Form @{
+            $formData = @{
               'ProjectSlug' = '${{ secrets.SIGNPATH_PROJECT_SLUG }}'
               'SigningPolicySlug' = '${{ secrets.SIGNPATH_SIGNING_POLICY_SLUG }}'
               'Artifact' = Get-Item "signpath-artifacts/VirtualDisplayDriver.zip"
-              'Description' = "Virtual Display Driver - Build ${{ github.run_number }} - ${{ github.sha }}"
-              'Origin.RepositoryUrl' = '${{ github.server_url }}/${{ github.repository }}'
-              'Origin.Ref' = '${{ github.ref }}'
-              'Origin.CommitId' = '${{ github.sha }}'
+              'Description' = "Virtual Display Driver - Build ${{ github.run_number }}"
             }
+            
+            if ('${{ github.ref }}' -eq 'refs/heads/main' -or '${{ github.ref }}' -eq 'refs/heads/master') {
+              $formData['Origin.RepositoryUrl'] = '${{ github.server_url }}/${{ github.repository }}'
+              $formData['Origin.Ref'] = '${{ github.ref }}'
+              $formData['Origin.CommitId'] = '${{ github.sha }}'
+            }
+            
+            $vddResponse = Invoke-RestMethod -Uri "$baseUrl/SigningRequests" -Method Post -Headers $headers -Form $formData
             Write-Output "✅ VDD submitted to SignPath. Request ID: $($vddResponse.SigningRequestId)"
             echo "VDD_SIGNING_REQUEST_ID=$($vddResponse.SigningRequestId)" >> $env:GITHUB_ENV
           } catch {
@@ -166,15 +221,20 @@ jobs:
         if (Test-Path "signpath-artifacts/VirtualAudioDriver.zip") {
           Write-Output "Submitting Virtual Audio Driver to SignPath..."
           try {
-            $vadResponse = Invoke-RestMethod -Uri "$baseUrl/SigningRequests" -Method Post -Headers $headers -Form @{
+            $formData = @{
               'ProjectSlug' = '${{ secrets.SIGNPATH_PROJECT_SLUG }}'
               'SigningPolicySlug' = '${{ secrets.SIGNPATH_SIGNING_POLICY_SLUG }}'
               'Artifact' = Get-Item "signpath-artifacts/VirtualAudioDriver.zip"
-              'Description' = "Virtual Audio Driver - Build ${{ github.run_number }} - ${{ github.sha }}"
-              'Origin.RepositoryUrl' = '${{ github.server_url }}/${{ github.repository }}'
-              'Origin.Ref' = '${{ github.ref }}'
-              'Origin.CommitId' = '${{ github.sha }}'
+              'Description' = "Virtual Audio Driver - Build ${{ github.run_number }}"
             }
+            
+            if ('${{ github.ref }}' -eq 'refs/heads/main' -or '${{ github.ref }}' -eq 'refs/heads/master') {
+              $formData['Origin.RepositoryUrl'] = '${{ github.server_url }}/${{ github.repository }}'
+              $formData['Origin.Ref'] = '${{ github.ref }}'
+              $formData['Origin.CommitId'] = '${{ github.sha }}'
+            }
+            
+            $vadResponse = Invoke-RestMethod -Uri "$baseUrl/SigningRequests" -Method Post -Headers $headers -Form $formData
             Write-Output "✅ VAD submitted to SignPath. Request ID: $($vadResponse.SigningRequestId)"
             echo "VAD_SIGNING_REQUEST_ID=$($vadResponse.SigningRequestId)" >> $env:GITHUB_ENV
           } catch {
@@ -186,19 +246,38 @@ jobs:
         if (Test-Path "signpath-artifacts/VirtualDriverControlPanel.zip") {
           Write-Output "Submitting Control Panel to SignPath..."
           try {
-            $controlResponse = Invoke-RestMethod -Uri "$baseUrl/SigningRequests" -Method Post -Headers $headers -Form @{
+            Write-Output "API Base URL: $baseUrl"
+            Write-Output "Project Slug: ${{ secrets.SIGNPATH_PROJECT_SLUG }}"
+            Write-Output "Signing Policy: ${{ secrets.SIGNPATH_SIGNING_POLICY_SLUG }}"
+            
+            $artifact = Get-Item "signpath-artifacts/VirtualDriverControlPanel.zip"
+            Write-Output "Artifact size: $($artifact.Length) bytes"
+            
+            $formData = @{
               'ProjectSlug' = '${{ secrets.SIGNPATH_PROJECT_SLUG }}'
               'SigningPolicySlug' = '${{ secrets.SIGNPATH_SIGNING_POLICY_SLUG }}'
-              'Artifact' = Get-Item "signpath-artifacts/VirtualDriverControlPanel.zip"
-              'Description' = "Virtual Driver Control Panel - Build ${{ github.run_number }} - ${{ github.sha }}"
-              'Origin.RepositoryUrl' = '${{ github.server_url }}/${{ github.repository }}'
-              'Origin.Ref' = '${{ github.ref }}'
-              'Origin.CommitId' = '${{ github.sha }}'
+              'Artifact' = $artifact
+              'Description' = "Virtual Driver Control Panel - Build ${{ github.run_number }}"
             }
+            
+            # Add origin verification if this is from main branch
+            if ('${{ github.ref }}' -eq 'refs/heads/main' -or '${{ github.ref }}' -eq 'refs/heads/master') {
+              $formData['Origin.RepositoryUrl'] = '${{ github.server_url }}/${{ github.repository }}'
+              $formData['Origin.Ref'] = '${{ github.ref }}'
+              $formData['Origin.CommitId'] = '${{ github.sha }}'
+            }
+            
+            $controlResponse = Invoke-RestMethod -Uri "$baseUrl/SigningRequests" -Method Post -Headers $headers -Form $formData
             Write-Output "✅ Control Panel submitted to SignPath. Request ID: $($controlResponse.SigningRequestId)"
             echo "CONTROL_PANEL_SIGNING_REQUEST_ID=$($controlResponse.SigningRequestId)" >> $env:GITHUB_ENV
           } catch {
             Write-Output "❌ Failed to submit Control Panel to SignPath: $($_.Exception.Message)"
+            Write-Output "❌ Response: $($_.Exception.Response)"
+            if ($_.Exception.Response) {
+              $reader = New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream())
+              $responseBody = $reader.ReadToEnd()
+              Write-Output "❌ Response body: $responseBody"
+            }
           }
         }
         
