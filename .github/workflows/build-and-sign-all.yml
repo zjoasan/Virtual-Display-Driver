@@ -13,7 +13,7 @@ env:
   BUILD_CONFIGURATION: Release
 
 jobs:
-  build-and-sign:
+  build-all-components:
     runs-on: windows-latest
     strategy:
       matrix:
@@ -140,31 +140,78 @@ jobs:
         }
       continue-on-error: true
       
-    # Upload VDD built artifacts
-    - name: Upload VDD artifacts
-      id: upload_vdd_artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: Built-VDD-${{ env.BUILD_CONFIGURATION }}-${{ matrix.platform }}
-        path: |
-          Virtual Display Driver (HDR)\${{ matrix.platform }}\${{ env.BUILD_CONFIGURATION }}\MttVDD\MttVDD.dll
-          Virtual Display Driver (HDR)\${{ matrix.platform }}\${{ env.BUILD_CONFIGURATION }}\MttVDD\MttVDD.inf
-          Virtual Display Driver (HDR)\${{ matrix.platform }}\${{ env.BUILD_CONFIGURATION }}\MttVDD\mttvdd.cat
-          Virtual Display Driver (HDR)\${{ matrix.platform }}\${{ env.BUILD_CONFIGURATION }}\MttVDD\vdd_settings.xml
-      continue-on-error: true
+    # Create unified package for signing
+    - name: Package all components for signing
+      id: package_components
+      run: |
+        Write-Output "Creating unified package for signing..."
+        $packageDir = "unified-driver-package-${{ matrix.platform }}"
+        $zipFile = "${packageDir}.zip"
+        
+        # Create package directory
+        New-Item -ItemType Directory -Path $packageDir -Force
+        
+        # Copy VDD files
+        $vddDir = "Virtual Display Driver (HDR)\${{ matrix.platform }}\${{ env.BUILD_CONFIGURATION }}\MttVDD"
+        if (Test-Path $vddDir) {
+          Write-Output "Copying VDD files..."
+          $vddPackageDir = "$packageDir\VDD"
+          New-Item -ItemType Directory -Path $vddPackageDir -Force
+          Copy-Item "$vddDir\*" -Destination $vddPackageDir -Force
+          Write-Output "VDD files copied to package"
+        } else {
+          Write-Output "Warning: VDD build directory not found"
+        }
+        
+        # Copy VAD files
+        Write-Output "Searching for VAD files..."
+        $vadFiles = Get-ChildItem -Path "Virtual-Audio-Driver (Latest Stable)" -Recurse -Include "*.sys", "*.inf", "*.cat", "*.dll" -ErrorAction SilentlyContinue
+        if ($vadFiles.Count -gt 0) {
+          $vadPackageDir = "$packageDir\VAD"
+          New-Item -ItemType Directory -Path $vadPackageDir -Force
+          foreach ($file in $vadFiles) {
+            Copy-Item $file.FullName -Destination $vadPackageDir -Force
+            Write-Output "Copied VAD file: $($file.Name)"
+          }
+        } else {
+          Write-Output "Warning: No VAD files found"
+        }
+        
+        # Copy Control Panel files
+        if (Test-Path "control-panel-publish") {
+          Write-Output "Copying Control Panel files..."
+          $controlPackageDir = "$packageDir\ControlPanel"
+          New-Item -ItemType Directory -Path $controlPackageDir -Force
+          Copy-Item "control-panel-publish\*" -Destination $controlPackageDir -Recurse -Force
+          Write-Output "Control Panel files copied to package"
+        } else {
+          Write-Output "Warning: Control Panel build not found"
+        }
+        
+        # Create ZIP file
+        Write-Output "Creating ZIP file: $zipFile"
+        Compress-Archive -Path $packageDir -DestinationPath $zipFile -Force
+        
+        # Verify ZIP contents
+        if (Test-Path $zipFile) {
+          $zipSize = (Get-Item $zipFile).Length
+          Write-Output "✅ Package created successfully: $zipFile (${zipSize} bytes)"
+          Write-Output "PACKAGE_PATH=$zipFile" >> $env:GITHUB_ENV
+          Write-Output "PACKAGE_NAME=$packageDir" >> $env:GITHUB_ENV
+        } else {
+          Write-Output "❌ Failed to create package"
+          exit 1
+        }
+      continue-on-error: false
       
-    # Upload VAD built artifacts  
-    - name: Upload VAD artifacts
-      id: upload_vad_artifact
+    # Upload unified package
+    - name: Upload unified package
+      id: upload_unified_package
       uses: actions/upload-artifact@v4
       with:
-        name: Built-VAD-${{ env.BUILD_CONFIGURATION }}-${{ matrix.platform }}
-        path: |
-          Virtual-Audio-Driver (Latest Stable)\${{ matrix.platform }}\${{ env.BUILD_CONFIGURATION }}\**\*.sys
-          Virtual-Audio-Driver (Latest Stable)\${{ matrix.platform }}\${{ env.BUILD_CONFIGURATION }}\**\*.inf
-          Virtual-Audio-Driver (Latest Stable)\${{ matrix.platform }}\${{ env.BUILD_CONFIGURATION }}\**\*.cat
-          Virtual-Audio-Driver (Latest Stable)\${{ matrix.platform }}\${{ env.BUILD_CONFIGURATION }}\**\*.dll
-      continue-on-error: true
+        name: Unified-Driver-Package-${{ env.BUILD_CONFIGURATION }}-${{ matrix.platform }}
+        path: ${{ env.PACKAGE_PATH }}
+      continue-on-error: false
     # Generate release tag
     - name: Generate release tag
       id: generate_tag
@@ -173,36 +220,17 @@ jobs:
         Write-Output "Generated release tag: $releaseTag"
         echo "RELEASE_TAG=$releaseTag" >> $env:GITHUB_ENV
         
-    # Submit VDD to SignPath (only for main branch and tags)
-    - name: Submit VDD to SignPath for signing
-      if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/')) && steps.upload_vdd_artifact.outputs.artifact-id != ''
-      id: signpath_vdd_request
+    # Submit unified package to SignPath (only for main branch and tags)
+    - name: Submit unified package to SignPath for signing
+      if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/')) && steps.upload_unified_package.outputs.artifact-id != ''
+      id: signpath_unified_request
       uses: signpath/github-action-submit-signing-request@v1
       with:
         api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
         organization-id: '${{ vars.SIGNPATH_ORG_ID }}'
         project-slug: '${{ vars.SIGNPATH_PROJECT_SLUG }}'
         signing-policy-slug: '${{ vars.SIGNPATH_POLICY_SLUG }}'
-        github-artifact-id: '${{ steps.upload_vdd_artifact.outputs.artifact-id }}'
-        wait-for-completion: true
-        output-artifact-directory: '${{ vars.SIGNPATH_OUTPUT_DIR }}'
-        parameters: |
-          Version: ${{ toJSON(env.BUILD_CONFIGURATION) }}
-          Release_Tag: "${{ env.RELEASE_TAG }}"
-          Platform: "${{ matrix.platform }}"
-      continue-on-error: true
-        
-    # Submit VAD to SignPath (only for main branch and tags)  
-    - name: Submit VAD to SignPath for signing
-      if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/')) && steps.upload_vad_artifact.outputs.artifact-id != ''
-      id: signpath_vad_request
-      uses: signpath/github-action-submit-signing-request@v1
-      with:
-        api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
-        organization-id: '${{ vars.SIGNPATH_ORG_ID }}'
-        project-slug: '${{ vars.SIGNPATH_PROJECT_SLUG }}'
-        signing-policy-slug: '${{ vars.SIGNPATH_POLICY_SLUG }}'
-        github-artifact-id: '${{ steps.upload_vad_artifact.outputs.artifact-id }}'
+        github-artifact-id: '${{ steps.upload_unified_package.outputs.artifact-id }}'
         wait-for-completion: true
         output-artifact-directory: '${{ vars.SIGNPATH_OUTPUT_DIR }}'
         parameters: |
@@ -211,21 +239,12 @@ jobs:
           Platform: "${{ matrix.platform }}"
       continue-on-error: true
       
-    # Upload signed VDD artifacts
-    - name: Upload signed VDD artifacts
-      if: steps.signpath_vdd_request.outcome == 'success'
+    # Upload signed unified package
+    - name: Upload signed unified package
+      if: steps.signpath_unified_request.outcome == 'success'
       uses: actions/upload-artifact@v4
       with:
-        name: Signed-VDD-${{ env.BUILD_CONFIGURATION }}-${{ matrix.platform }}
-        path: '${{ vars.SIGNPATH_OUTPUT_DIR }}\*'
-      continue-on-error: true
-        
-    # Upload signed VAD artifacts
-    - name: Upload signed VAD artifacts
-      if: steps.signpath_vad_request.outcome == 'success'
-      uses: actions/upload-artifact@v4
-      with:
-        name: Signed-VAD-${{ env.BUILD_CONFIGURATION }}-${{ matrix.platform }}
+        name: Signed-Unified-Package-${{ env.BUILD_CONFIGURATION }}-${{ matrix.platform }}
         path: '${{ vars.SIGNPATH_OUTPUT_DIR }}\*'
       continue-on-error: true
         
@@ -243,19 +262,16 @@ jobs:
         Write-Output "This workflow successfully:"
         Write-Output "✅ Built Virtual Display Driver (VDD) with proper Windows Driver Kit dependencies"
         Write-Output "✅ Built Virtual Audio Driver (VAD) for ${{ matrix.platform }} architecture"
-        Write-Output "✅ Uploaded driver artifacts to GitHub Actions"
-        Write-Output "✅ Submitted drivers to SignPath for code signing with origin verification"
+        Write-Output "✅ Built Control Panel application"
+        Write-Output "✅ Created unified package containing all components"
+        Write-Output "✅ Uploaded unified package to GitHub Actions"
+        Write-Output "✅ Submitted unified package to SignPath for code signing with origin verification"
         Write-Output "✅ Generated automatic release tags for version tracking"
         Write-Output "✅ Supports both x64 and ARM64 architectures via matrix builds"
         Write-Output ""
         Write-Output "SignPath Integration Status:"
-        if ('${{ steps.signpath_vdd_request.outcome }}' -eq 'success') { 
-          Write-Output "✅ VDD submitted and signed successfully"
+        if ('${{ steps.signpath_unified_request.outcome }}' -eq 'success') { 
+          Write-Output "✅ Unified package submitted and signed successfully"
         } else { 
-          Write-Output "❌ VDD signing failed or skipped"
-        }
-        if ('${{ steps.signpath_vad_request.outcome }}' -eq 'success') { 
-          Write-Output "✅ VAD submitted and signed successfully" 
-        } else { 
-          Write-Output "❌ VAD signing failed or skipped"
+          Write-Output "❌ Unified package signing failed or skipped"
         }
