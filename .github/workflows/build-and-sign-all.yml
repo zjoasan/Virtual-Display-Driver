@@ -145,50 +145,113 @@ jobs:
       id: package_components
       run: |
         Write-Output "Creating unified package for signing..."
-        $packageDir = "unified-driver-package-${{ matrix.platform }}"
-        $zipFile = "${packageDir}.zip"
+        $packageDir = "unified-driver-package"
+        $zipFile = "${packageDir}-${{ matrix.platform }}.zip"
         
-        # Create package directory
+        # Create standardized package directory structure
         New-Item -ItemType Directory -Path $packageDir -Force
+        $vddPackageDir = "$packageDir\VDD"
+        $vadPackageDir = "$packageDir\VAD"
+        $controlPackageDir = "$packageDir\ControlPanel"
+        New-Item -ItemType Directory -Path $vddPackageDir -Force
+        New-Item -ItemType Directory -Path $vadPackageDir -Force
+        New-Item -ItemType Directory -Path $controlPackageDir -Force
         
-        # Copy VDD files
+        # Copy VDD files with standardized structure
         $vddDir = "Virtual Display Driver (HDR)\${{ matrix.platform }}\${{ env.BUILD_CONFIGURATION }}\MttVDD"
         if (Test-Path $vddDir) {
-          Write-Output "Copying VDD files..."
-          $vddPackageDir = "$packageDir\VDD"
-          New-Item -ItemType Directory -Path $vddPackageDir -Force
+          Write-Output "Copying VDD files from: $vddDir"
           Copy-Item "$vddDir\*" -Destination $vddPackageDir -Force
-          Write-Output "VDD files copied to package"
-        } else {
-          Write-Output "Warning: VDD build directory not found"
-        }
-        
-        # Copy VAD files
-        Write-Output "Searching for VAD files..."
-        $vadFiles = Get-ChildItem -Path "Virtual-Audio-Driver (Latest Stable)" -Recurse -Include "*.sys", "*.inf", "*.cat", "*.dll" -ErrorAction SilentlyContinue
-        if ($vadFiles.Count -gt 0) {
-          $vadPackageDir = "$packageDir\VAD"
-          New-Item -ItemType Directory -Path $vadPackageDir -Force
-          foreach ($file in $vadFiles) {
-            Copy-Item $file.FullName -Destination $vadPackageDir -Force
-            Write-Output "Copied VAD file: $($file.Name)"
+          $vddFiles = Get-ChildItem $vddPackageDir
+          Write-Output "VDD files in package:"
+          foreach ($file in $vddFiles) {
+            Write-Output "  - $($file.Name)"
           }
         } else {
-          Write-Output "Warning: No VAD files found"
+          Write-Output "Warning: VDD build directory not found at: $vddDir"
+          Write-Output "Searching for alternative VDD locations..."
+          $altVddDirs = Get-ChildItem -Path "Virtual Display Driver (HDR)" -Recurse -Directory -Name "*MttVDD*" -ErrorAction SilentlyContinue
+          foreach ($dir in $altVddDirs) {
+            Write-Output "  Found: Virtual Display Driver (HDR)\$dir"
+          }
         }
         
-        # Copy Control Panel files
+        # Copy VAD files with consistent structure regardless of platform
+        Write-Output "Searching for VAD files..."
+        $vadBaseDir = "Virtual-Audio-Driver (Latest Stable)"
+        
+        # Look for platform-specific VAD files first
+        $vadPlatformDirs = @(
+          "$vadBaseDir\${{ matrix.platform }}\${{ env.BUILD_CONFIGURATION }}",
+          "$vadBaseDir\${{ matrix.platform }}\Release",
+          "$vadBaseDir\${{ matrix.platform }}"
+        )
+        
+        $vadFound = $false
+        foreach ($vadDir in $vadPlatformDirs) {
+          if (Test-Path $vadDir) {
+            Write-Output "Found VAD platform directory: $vadDir"
+            $vadFiles = Get-ChildItem -Path $vadDir -Recurse -Include "*.sys", "*.inf", "*.cat", "*.dll" -ErrorAction SilentlyContinue
+            if ($vadFiles.Count -gt 0) {
+              foreach ($file in $vadFiles) {
+                Copy-Item $file.FullName -Destination $vadPackageDir -Force
+                Write-Output "Copied VAD file: $($file.Name)"
+              }
+              $vadFound = $true
+              break
+            }
+          }
+        }
+        
+        # If no platform-specific files found, search globally
+        if (-not $vadFound) {
+          Write-Output "No platform-specific VAD files found, searching globally..."
+          $vadFiles = Get-ChildItem -Path $vadBaseDir -Recurse -Include "*.sys", "*.inf", "*.cat", "*.dll" -ErrorAction SilentlyContinue
+          if ($vadFiles.Count -gt 0) {
+            foreach ($file in $vadFiles) {
+              Copy-Item $file.FullName -Destination $vadPackageDir -Force
+              Write-Output "Copied VAD file: $($file.Name)"
+            }
+            $vadFound = $true
+          }
+        }
+        
+        if (-not $vadFound) {
+          Write-Output "Warning: No VAD files found for ${{ matrix.platform }}"
+        }
+        
+        # Copy Control Panel files (platform-independent)
         if (Test-Path "control-panel-publish") {
           Write-Output "Copying Control Panel files..."
-          $controlPackageDir = "$packageDir\ControlPanel"
-          New-Item -ItemType Directory -Path $controlPackageDir -Force
           Copy-Item "control-panel-publish\*" -Destination $controlPackageDir -Recurse -Force
-          Write-Output "Control Panel files copied to package"
+          $controlFiles = Get-ChildItem $controlPackageDir
+          Write-Output "Control Panel files in package:"
+          foreach ($file in $controlFiles) {
+            Write-Output "  - $($file.Name)"
+          }
         } else {
           Write-Output "Warning: Control Panel build not found"
         }
         
+        # Create standardized folder structure summary
+        Write-Output ""
+        Write-Output "=== Final Package Structure ==="
+        Write-Output "Package directory: $packageDir"
+        if (Test-Path "$packageDir\VDD") {
+          Write-Output "VDD folder contents:"
+          Get-ChildItem "$packageDir\VDD" | ForEach-Object { Write-Output "  VDD\$($_.Name)" }
+        }
+        if (Test-Path "$packageDir\VAD") {
+          Write-Output "VAD folder contents:"
+          Get-ChildItem "$packageDir\VAD" | ForEach-Object { Write-Output "  VAD\$($_.Name)" }
+        }
+        if (Test-Path "$packageDir\ControlPanel") {
+          Write-Output "ControlPanel folder contents:"
+          Get-ChildItem "$packageDir\ControlPanel" | ForEach-Object { Write-Output "  ControlPanel\$($_.Name)" }
+        }
+        
         # Create ZIP file
+        Write-Output ""
         Write-Output "Creating ZIP file: $zipFile"
         Compress-Archive -Path $packageDir -DestinationPath $zipFile -Force
         
