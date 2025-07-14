@@ -190,15 +190,21 @@ jobs:
         $headers = @{
           'Authorization' = 'Bearer ${{ secrets.SIGNPATH_API_TOKEN }}'
         }
-        $baseUrl = "https://app.signpath.io/api/v1/${{ secrets.SIGNPATH_ORGANIZATION_ID }}"
+        $baseUrl = "https://app.signpath.io/api/v1/${{ vars.SIGNPATH_ORG_ID }}"
+        
+        Write-Output "SignPath Configuration:"
+        Write-Output "Organization ID: ${{ vars.SIGNPATH_ORG_ID }}"
+        Write-Output "Project Slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}"
+        Write-Output "Policy Slug: ${{ vars.SIGNPATH_POLICY_SLUG }}"
+        Write-Output "Base URL: $baseUrl"
         
         # Submit VDD for signing
         if (Test-Path "signpath-artifacts/VirtualDisplayDriver.zip") {
           Write-Output "Submitting Virtual Display Driver to SignPath..."
           try {
             $formData = @{
-              'ProjectSlug' = '${{ secrets.SIGNPATH_PROJECT_SLUG }}'
-              'SigningPolicySlug' = '${{ secrets.SIGNPATH_SIGNING_POLICY_SLUG }}'
+              'ProjectSlug' = '${{ vars.SIGNPATH_PROJECT_SLUG }}'
+              'SigningPolicySlug' = '${{ vars.SIGNPATH_POLICY_SLUG }}'
               'Artifact' = Get-Item "signpath-artifacts/VirtualDisplayDriver.zip"
               'Description' = "Virtual Display Driver - Build ${{ github.run_number }}"
             }
@@ -222,8 +228,8 @@ jobs:
           Write-Output "Submitting Virtual Audio Driver to SignPath..."
           try {
             $formData = @{
-              'ProjectSlug' = '${{ secrets.SIGNPATH_PROJECT_SLUG }}'
-              'SigningPolicySlug' = '${{ secrets.SIGNPATH_SIGNING_POLICY_SLUG }}'
+              'ProjectSlug' = '${{ vars.SIGNPATH_PROJECT_SLUG }}'
+              'SigningPolicySlug' = '${{ vars.SIGNPATH_POLICY_SLUG }}'
               'Artifact' = Get-Item "signpath-artifacts/VirtualAudioDriver.zip"
               'Description' = "Virtual Audio Driver - Build ${{ github.run_number }}"
             }
@@ -246,16 +252,12 @@ jobs:
         if (Test-Path "signpath-artifacts/VirtualDriverControlPanel.zip") {
           Write-Output "Submitting Control Panel to SignPath..."
           try {
-            Write-Output "API Base URL: $baseUrl"
-            Write-Output "Project Slug: ${{ secrets.SIGNPATH_PROJECT_SLUG }}"
-            Write-Output "Signing Policy: ${{ secrets.SIGNPATH_SIGNING_POLICY_SLUG }}"
-            
             $artifact = Get-Item "signpath-artifacts/VirtualDriverControlPanel.zip"
             Write-Output "Artifact size: $($artifact.Length) bytes"
             
             $formData = @{
-              'ProjectSlug' = '${{ secrets.SIGNPATH_PROJECT_SLUG }}'
-              'SigningPolicySlug' = '${{ secrets.SIGNPATH_SIGNING_POLICY_SLUG }}'
+              'ProjectSlug' = '${{ vars.SIGNPATH_PROJECT_SLUG }}'
+              'SigningPolicySlug' = '${{ vars.SIGNPATH_POLICY_SLUG }}'
               'Artifact' = $artifact
               'Description' = "Virtual Driver Control Panel - Build ${{ github.run_number }}"
             }
@@ -272,11 +274,15 @@ jobs:
             echo "CONTROL_PANEL_SIGNING_REQUEST_ID=$($controlResponse.SigningRequestId)" >> $env:GITHUB_ENV
           } catch {
             Write-Output "❌ Failed to submit Control Panel to SignPath: $($_.Exception.Message)"
-            Write-Output "❌ Response: $($_.Exception.Response)"
             if ($_.Exception.Response) {
-              $reader = New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream())
-              $responseBody = $reader.ReadToEnd()
-              Write-Output "❌ Response body: $responseBody"
+              Write-Output "❌ Response Status: $($_.Exception.Response.StatusCode)"
+              Write-Output "❌ Response Headers: $($_.Exception.Response.Headers)"
+              try {
+                $responseBody = $_.Exception.Response.Content.ReadAsStringAsync().Result
+                Write-Output "❌ Response body: $responseBody"
+              } catch {
+                Write-Output "❌ Could not read response body"
+              }
             }
           }
         }
