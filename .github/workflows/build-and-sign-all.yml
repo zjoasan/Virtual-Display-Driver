@@ -53,16 +53,21 @@ jobs:
         $vddSln = "Virtual Display Driver (HDR)/MTTVDD.sln"
         if (Test-Path $vddSln) {
           Write-Output "Found VDD solution: $vddSln"
-          msbuild $vddSln /p:Configuration=$env:BUILD_CONFIGURATION /p:Platform=${{ matrix.platform }}
-          Write-Output "VDD build completed for ${{ matrix.platform }}"
+          Write-Output "Running MSBuild..."
+          msbuild $vddSln /p:Configuration=$env:BUILD_CONFIGURATION /p:Platform=${{ matrix.platform }} /verbosity:minimal
+          if ($LASTEXITCODE -eq 0) {
+            Write-Output "✅ VDD build completed successfully for ${{ matrix.platform }}"
+          } else {
+            Write-Output "❌ VDD build failed with exit code: $LASTEXITCODE"
+          }
           
           # List build directory
           $buildDir = "Virtual Display Driver (HDR)\${{ matrix.platform }}\$env:BUILD_CONFIGURATION\MttVDD"
           if (Test-Path $buildDir) {
-            Write-Output "VDD Build outputs in $buildDir:"
+            Write-Output "VDD Build outputs in ${buildDir}:"
             Get-ChildItem $buildDir | ForEach-Object { Write-Output "  - $($_.Name)" }
           } else {
-            Write-Output "❌ Build directory not found: $buildDir"
+            Write-Output "❌ Build directory not found: ${buildDir}"
           }
         } else {
           Write-Output "❌ VDD solution file not found at: $vddSln"
@@ -77,8 +82,13 @@ jobs:
         $vadSln = "Virtual-Audio-Driver (Latest Stable)/VirtualAudioDriver.sln"
         if (Test-Path $vadSln) {
           Write-Output "Found VAD solution: $vadSln"
-          msbuild $vadSln /p:Configuration=$env:BUILD_CONFIGURATION /p:Platform=${{ matrix.platform }}
-          Write-Output "VAD build completed for ${{ matrix.platform }}"
+          Write-Output "Running MSBuild..."
+          msbuild $vadSln /p:Configuration=$env:BUILD_CONFIGURATION /p:Platform=${{ matrix.platform }} /verbosity:minimal
+          if ($LASTEXITCODE -eq 0) {
+            Write-Output "✅ VAD build completed successfully for ${{ matrix.platform }}"
+          } else {
+            Write-Output "❌ VAD build failed with exit code: $LASTEXITCODE"
+          }
           
           # List build outputs (search for standard driver output locations)
           Write-Output "Searching for VAD build outputs..."
@@ -160,6 +170,7 @@ jobs:
       id: generate_tag
       run: |
         $releaseTag = (Get-Date).ToString('yy.MM.dd')
+        Write-Output "Generated release tag: $releaseTag"
         echo "RELEASE_TAG=$releaseTag" >> $env:GITHUB_ENV
         
     # Submit VDD to SignPath (only for main branch and tags)
