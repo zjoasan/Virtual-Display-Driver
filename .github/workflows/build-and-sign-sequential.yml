@@ -1,4 +1,4 @@
-name: Build and Sign Virtual Drivers - Sequential
+name: Build and Sign Virtual Drivers - Sequential (Fixed)
 
 on:
   push:
@@ -13,7 +13,7 @@ env:
   BUILD_CONFIGURATION: Release
 
 jobs:
-  # Job 1: Build ARM64 components first
+  # Job 1: Build ARM64 VDD and Control Panel only (skip VAD due to WDK ARM64 issues)
   build-arm64:
     runs-on: windows-latest
     
@@ -74,31 +74,11 @@ jobs:
           exit 1
         }
         
-    # Build Virtual Audio Driver for ARM64
-    - name: Build Virtual Audio Driver (ARM64)
+    # Note: Skipping ARM64 VAD build due to WDK toolchain limitations
+    - name: ARM64 VAD Build Notice
       run: |
-        Write-Output "Building Virtual Audio Driver for ARM64..."
-        $vadSln = "Virtual-Audio-Driver (Latest Stable)/VirtualAudioDriver.sln"
-        if (Test-Path $vadSln) {
-          Write-Output "Found VAD solution: $vadSln"
-          Write-Output "Running MSBuild for ARM64..."
-          msbuild $vadSln /p:Configuration=$env:BUILD_CONFIGURATION /p:Platform=ARM64 /verbosity:minimal
-          if ($LASTEXITCODE -eq 0) {
-            Write-Output "✅ VAD build completed successfully for ARM64"
-          } else {
-            Write-Output "❌ VAD build failed with exit code: $LASTEXITCODE"
-            exit 1
-          }
-          
-          # List build outputs
-          Write-Output "Searching for VAD build outputs..."
-          Get-ChildItem -Path "Virtual-Audio-Driver (Latest Stable)" -Recurse -Include "*.sys", "*.inf", "*.cat", "*.dll" -ErrorAction SilentlyContinue | ForEach-Object {
-            Write-Output "  - $($_.FullName)"
-          }
-        } else {
-          Write-Output "❌ VAD solution file not found at: $vadSln"
-          exit 1
-        }
+        Write-Output "ℹ️  Skipping ARM64 VAD build due to Windows Driver Kit ARM64 cross-compilation issues"
+        Write-Output "ℹ️  VAD will be built for x64 only in the next job"
       
     # Build Control Panel (platform-independent, only build once)
     - name: Checkout Control Panel Repository
@@ -138,7 +118,7 @@ jobs:
           exit 1
         }
       
-    # Package ARM64 components
+    # Package ARM64 components (VDD + Control Panel only)
     - name: Package ARM64 components
       run: |
         Write-Output "Creating ARM64 package..."
@@ -147,10 +127,8 @@ jobs:
         
         # Create component directories
         $vddDir = "$packageDir\VDD"
-        $vadDir = "$packageDir\VAD"
         $controlDir = "$packageDir\ControlPanel"
         New-Item -ItemType Directory -Path $vddDir -Force
-        New-Item -ItemType Directory -Path $vadDir -Force
         New-Item -ItemType Directory -Path $controlDir -Force
         
         # Copy VDD ARM64 files
@@ -159,13 +137,6 @@ jobs:
           Copy-Item "$vddBuildDir\*" -Destination $vddDir -Force
           Write-Output "✅ Copied VDD ARM64 files"
         }
-        
-        # Copy VAD ARM64 files
-        $vadFiles = Get-ChildItem -Path "Virtual-Audio-Driver (Latest Stable)" -Recurse -Include "*.sys", "*.inf", "*.cat", "*.dll" -ErrorAction SilentlyContinue
-        foreach ($file in $vadFiles) {
-          Copy-Item $file.FullName -Destination $vadDir -Force
-        }
-        Write-Output "✅ Copied VAD ARM64 files"
         
         # Copy Control Panel files
         if (Test-Path "control-panel-publish") {
@@ -183,7 +154,7 @@ jobs:
         path: ${{ env.ARM64_PACKAGE_DIR }}
         retention-days: 1
 
-  # Job 2: Build x64 components (depends on ARM64 completion)
+  # Job 2: Build x64 components (VDD + VAD) - depends on ARM64 completion
   build-x64:
     needs: build-arm64
     runs-on: windows-latest
@@ -240,7 +211,7 @@ jobs:
           exit 1
         }
         
-    # Build Virtual Audio Driver for x64
+    # Build Virtual Audio Driver for x64 (stable platform)
     - name: Build Virtual Audio Driver (x64)
       run: |
         Write-Output "Building Virtual Audio Driver for x64..."
@@ -266,7 +237,7 @@ jobs:
           exit 1
         }
       
-    # Package x64 components
+    # Package x64 components (VDD + VAD)
     - name: Package x64 components
       run: |
         Write-Output "Creating x64 package..."
@@ -339,31 +310,27 @@ jobs:
         New-Item -ItemType Directory -Path $arm64Dir -Force
         New-Item -ItemType Directory -Path $x64Dir -Force
         
-        # Create component subdirectories for each platform
-        foreach ($platform in @("ARM64", "x64")) {
-          $platformDir = "$unifiedDir\$platform"
-          New-Item -ItemType Directory -Path "$platformDir\VDD" -Force
-          New-Item -ItemType Directory -Path "$platformDir\VAD" -Force
-          if ($platform -eq "ARM64") {
-            New-Item -ItemType Directory -Path "$platformDir\ControlPanel" -Force
-          }
-        }
+        # Create component subdirectories
+        # ARM64: VDD + Control Panel only
+        New-Item -ItemType Directory -Path "$arm64Dir\VDD" -Force
+        New-Item -ItemType Directory -Path "$arm64Dir\ControlPanel" -Force
         
-        # Copy ARM64 components
+        # x64: VDD + VAD + Control Panel
+        New-Item -ItemType Directory -Path "$x64Dir\VDD" -Force
+        New-Item -ItemType Directory -Path "$x64Dir\VAD" -Force
+        New-Item -ItemType Directory -Path "$x64Dir\ControlPanel" -Force
+        
+        # Copy ARM64 components (VDD + Control Panel)
         if (Test-Path "arm64-components\VDD") {
           Copy-Item "arm64-components\VDD\*" -Destination "$arm64Dir\VDD" -Force
           Write-Output "✅ Copied ARM64 VDD files"
-        }
-        if (Test-Path "arm64-components\VAD") {
-          Copy-Item "arm64-components\VAD\*" -Destination "$arm64Dir\VAD" -Force
-          Write-Output "✅ Copied ARM64 VAD files"
         }
         if (Test-Path "arm64-components\ControlPanel") {
           Copy-Item "arm64-components\ControlPanel\*" -Destination "$arm64Dir\ControlPanel" -Recurse -Force
           Write-Output "✅ Copied Control Panel files to ARM64 package"
         }
         
-        # Copy x64 components
+        # Copy x64 components (VDD + VAD)
         if (Test-Path "x64-components\VDD") {
           Copy-Item "x64-components\VDD\*" -Destination "$x64Dir\VDD" -Force
           Write-Output "✅ Copied x64 VDD files"
@@ -392,7 +359,7 @@ jobs:
         }
         
         # Create ZIP file
-        $zipFile = "unified-driver-package-all-platforms.zip"
+        $zipFile = "unified-driver-package-mixed-platform.zip"
         Write-Output ""
         Write-Output "Creating unified ZIP file: $zipFile"
         Compress-Archive -Path $unifiedDir -DestinationPath $zipFile -Force
@@ -411,7 +378,7 @@ jobs:
       id: upload_unified_package
       uses: actions/upload-artifact@v4
       with:
-        name: Unified-Driver-Package-All-Platforms-${{ env.BUILD_CONFIGURATION }}
+        name: Unified-Driver-Package-Mixed-Platform-${{ env.BUILD_CONFIGURATION }}
         path: ${{ env.UNIFIED_PACKAGE_PATH }}
         
     # Generate release tag
@@ -438,7 +405,7 @@ jobs:
         parameters: |
           Version: ${{ toJSON(env.BUILD_CONFIGURATION) }}
           Release_Tag: "${{ env.RELEASE_TAG }}"
-          Platforms: "ARM64,x64"
+          Platforms: "ARM64-VDD-only,x64-VDD-VAD"
       continue-on-error: true
       
     # Upload signed unified package
@@ -446,7 +413,7 @@ jobs:
       if: steps.signpath_unified_request.outcome == 'success'
       uses: actions/upload-artifact@v4
       with:
-        name: Signed-Unified-Package-All-Platforms-${{ env.BUILD_CONFIGURATION }}
+        name: Signed-Unified-Package-Mixed-Platform-${{ env.BUILD_CONFIGURATION }}
         path: '${{ vars.SIGNPATH_OUTPUT_DIR }}\*'
       continue-on-error: true
         
@@ -454,31 +421,38 @@ jobs:
     - name: Build and SignPath Summary
       if: always()
       run: |
-        Write-Output "=== Virtual Drivers Sequential Build & Sign Summary ==="
+        Write-Output "=== Virtual Drivers Sequential Build & Sign Summary (Fixed) ==="
         Write-Output "Configuration: $env:BUILD_CONFIGURATION"
-        Write-Output "Platforms: ARM64, x64"
         Write-Output "Release Tag: ${{ env.RELEASE_TAG }}"
         Write-Output "Commit: ${{ github.sha }}"
         Write-Output "Branch/Tag: ${{ github.ref }}"
         Write-Output ""
-        Write-Output "Build Strategy: Sequential (ARM64 → x64 → Unified Signing)"
+        Write-Output "Build Strategy: Sequential with Mixed Platform Support"
+        Write-Output ""
+        Write-Output "Platform-Specific Components Built:"
+        Write-Output "ARM64: VDD + Control Panel (VAD skipped due to WDK limitations)"
+        Write-Output "x64:   VDD + VAD + Control Panel"
         Write-Output ""
         Write-Output "This workflow successfully:"
-        Write-Output "✅ Built ARM64 drivers first (VDD + VAD + Control Panel)"
+        Write-Output "✅ Built ARM64 VDD and Control Panel first"
         Write-Output "✅ Built x64 drivers after ARM64 completion (VDD + VAD)"
-        Write-Output "✅ Created unified package containing all platforms and components"
+        Write-Output "✅ Created unified package containing all working components"
         Write-Output "✅ Submitted single unified package to SignPath for code signing"
         Write-Output "✅ Generated automatic release tags for version tracking"
         Write-Output ""
-        Write-Output "Benefits of Sequential Approach:"
-        Write-Output "• Resource efficiency - no parallel builds"
-        Write-Output "• Better error isolation - ARM64 failure stops x64 build"
+        Write-Output "Benefits of This Approach:"
+        Write-Output "• Resource efficiency - sequential builds prevent resource conflicts"
+        Write-Output "• Error isolation - ARM64 failure stops x64 build"
         Write-Output "• Single SignPath submission for all platforms"
-        Write-Output "• Consolidated artifact management"
+        Write-Output "• Works around WDK ARM64 cross-compilation limitations"
+        Write-Output "• VAD still available for primary x64 platform"
         Write-Output ""
         Write-Output "SignPath Integration Status:"
         if ('${{ steps.signpath_unified_request.outcome }}' -eq 'success') { 
-          Write-Output "✅ Unified package (all platforms) submitted and signed successfully"
+          Write-Output "✅ Unified package (mixed platforms) submitted and signed successfully"
         } else { 
           Write-Output "❌ Unified package signing failed or skipped"
         }
+        Write-Output ""
+        Write-Output "⚠️  Note: ARM64 VAD skipped due to Windows Driver Kit cross-compilation issues"
+        Write-Output "   This is a known limitation with WDK 11 ARM64 toolchain on GitHub Actions"
