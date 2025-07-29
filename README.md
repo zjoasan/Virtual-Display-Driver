@@ -24,12 +24,12 @@ Unlike traditional monitors, this virtual display supports custom resolutions an
 
 ## 🛠️ Installation
 
-- Step 1: Download the Installer
+- Step 1: Download the Virtual Driver Control app.
    - You can download the installer directly from the [Releases](https://github.com/VirtualDisplay/Virtual-Display-Driver/releases) page.
 
-- Step 2: Run the Installer
-   - Launch the installer.
-   - Follow the on-screen instructions to complete the installation.
+- Step 2: Extract to a folder and run the app
+   - Launch the VDC.
+   - Click the Install button.
 
 - Step 3: Verify the Installation (Optional)
    - Check if the Virtual Display Driver is correctly installed by running the following:
@@ -53,7 +53,7 @@ HDR Support Now Available for Windows 11 23H2+
 
 ### Installation Video
 
-[![maxresdefault](https://github.com/user-attachments/assets/fa9bec7f-c6f4-4362-be11-8e5d43c326f1)](https://youtu.be/ChvucKHbwMo)
+[![Thumbnail24 (1)](https://github.com/user-attachments/assets/383d840c-8327-439b-a89b-84b271320371)](https://youtu.be/jN5YnHlC0fE)
 
 ![Powerpoint](https://github.com/user-attachments/assets/9ac05776-36e1-4ba1-ac52-3f189dbd7730)
 
@@ -63,6 +63,12 @@ HDR Support Now Available for Windows 11 23H2+
   <tr>
     <td><img src="https://github.com/user-attachments/assets/ca93d971-67dc-41dd-b945-ab4f372ea72a" /></td>
     <td>Free code signing on Windows provided by <a href="https://signpath.io">SignPath.io</a>, certificate by <a href="https://signpath.org">SignPath Foundation</a></td>
+  </tr>
+</table>
+
+<table>
+  <tr>
+    <td>Advanced 32bit IEEE Float Audio brought to you by **Lune Studios**.</td>
   </tr>
 </table>
 
