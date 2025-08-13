@@ -152,6 +152,9 @@ const char* XorCursorSupportLevelToString(IDDCX_XOR_CURSOR_SUPPORT level) {
 
 vector<unsigned char> Microsoft::IndirectDisp::IndirectDeviceContext::s_KnownMonitorEdid; //Changed to support static vector
 
+std::map<LUID, std::shared_ptr<Direct3DDevice>, Microsoft::IndirectDisp::LuidComparator> Microsoft::IndirectDisp::IndirectDeviceContext::s_DeviceCache;
+std::mutex Microsoft::IndirectDisp::IndirectDeviceContext::s_DeviceCacheMutex;
+
 struct IndirectDeviceContextWrapper
 {
 	IndirectDeviceContext* pContext;
@@ -2185,6 +2188,10 @@ void SwapChainProcessor::Run()
 void SwapChainProcessor::RunCore()
 {
 	stringstream logStream;
+	DWORD retryDelay = 1;
+	const DWORD maxRetryDelay = 100;
+	int retryCount = 0;
+	const int maxRetries = 5;
 
 	// Get the DXGI device interface
 	ComPtr<IDXGIDevice> DxgiDevice;
@@ -2198,6 +2205,12 @@ void SwapChainProcessor::RunCore()
 	logStream << "DXGI device interface obtained successfully.";
 	//vddlog("d", logStream.str().c_str());
 
+
+	// Validate that our device is still valid before setting it
+	if (!m_Device || !m_Device->Device) {
+		vddlog("e", "Direct3DDevice became invalid during SwapChain processing");
+		return;
+	}
 
 	IDARG_IN_SWAPCHAINSETDEVICE SetDevice = {};
 	SetDevice.pDevice = DxgiDevice.Get();
@@ -2248,7 +2261,7 @@ void SwapChainProcessor::RunCore()
 				m_hAvailableBufferEvent,
 				m_hTerminateEvent.Get()
 			};
-			DWORD WaitResult = WaitForMultipleObjects(ARRAYSIZE(WaitHandles), WaitHandles, FALSE, 16);
+			DWORD WaitResult = WaitForMultipleObjects(ARRAYSIZE(WaitHandles), WaitHandles, FALSE, 100);
 
 			logStream << "Buffer acquisition pending. WaitResult: " << WaitResult;
 
@@ -2276,6 +2289,10 @@ void SwapChainProcessor::RunCore()
 		}
 		else if (SUCCEEDED(hr))
 		{
+			// Reset retry delay and count on successful buffer acquisition
+			retryDelay = 1;
+			retryCount = 0;
+			
 			AcquiredBuffer.Attach(pSurface);
 
 			// ==============================
@@ -2307,10 +2324,29 @@ void SwapChainProcessor::RunCore()
 		else
 		{
 			logStream.str(""); // Clear the stream
-			logStream << "Failed to acquire buffer. Exiting loop. The swap-chain was likely abandoned (e.g. DXGI_ERROR_ACCESS_LOST) - HRESULT: " << hr;
-			vddlog("e", logStream.str().c_str());
-			// The swap-chain was likely abandoned (e.g. DXGI_ERROR_ACCESS_LOST), so exit the processing loop
-			break;
+			if (hr == DXGI_ERROR_ACCESS_LOST && retryCount < maxRetries)
+			{
+				logStream << "DXGI_ERROR_ACCESS_LOST detected. Retry " << (retryCount + 1) << "/" << maxRetries << " after " << retryDelay << "ms delay.";
+				vddlog("w", logStream.str().c_str());
+				Sleep(retryDelay);
+				retryDelay = min(retryDelay * 2, maxRetryDelay);
+				retryCount++;
+				continue;
+			}
+			else
+			{
+				if (hr == DXGI_ERROR_ACCESS_LOST)
+				{
+					logStream << "DXGI_ERROR_ACCESS_LOST: Maximum retries (" << maxRetries << ") reached. Exiting loop.";
+				}
+				else
+				{
+					logStream << "Failed to acquire buffer. Exiting loop. HRESULT: " << hr;
+				}
+				vddlog("e", logStream.str().c_str());
+				// The swap-chain was likely abandoned, so exit the processing loop
+				break;
+			}
 		}
 	}
 }
@@ -2449,7 +2485,80 @@ int maincalc() {
 	return 0;
 }
 
+std::shared_ptr<Direct3DDevice> IndirectDeviceContext::GetOrCreateDevice(LUID RenderAdapter)
+{
+	std::shared_ptr<Direct3DDevice> Device;
+	stringstream logStream;
 
+	logStream << "GetOrCreateDevice called for LUID: " << RenderAdapter.HighPart << "-" << RenderAdapter.LowPart;
+	vddlog("d", logStream.str().c_str());
+
+	{
+		std::lock_guard<std::mutex> lock(s_DeviceCacheMutex);
+		
+		logStream.str("");
+		logStream << "Device cache size: " << s_DeviceCache.size();
+		vddlog("d", logStream.str().c_str());
+		
+		auto it = s_DeviceCache.find(RenderAdapter);
+		if (it != s_DeviceCache.end()) {
+			Device = it->second;
+			if (Device) {
+				logStream.str("");
+				logStream << "Reusing cached Direct3DDevice for LUID " << RenderAdapter.HighPart << "-" << RenderAdapter.LowPart;
+				vddlog("d", logStream.str().c_str());
+				return Device;
+			} else {
+				logStream.str("");
+				logStream << "Cached Direct3DDevice is null for LUID " << RenderAdapter.HighPart << "-" << RenderAdapter.LowPart << ", removing from cache";
+				vddlog("d", logStream.str().c_str());
+				s_DeviceCache.erase(it);
+			}
+		}
+	}
+
+	logStream.str("");
+	logStream << "Creating new Direct3DDevice for LUID " << RenderAdapter.HighPart << "-" << RenderAdapter.LowPart;
+	vddlog("d", logStream.str().c_str());
+	
+	Device = make_shared<Direct3DDevice>(RenderAdapter);
+	if (FAILED(Device->Init())) {
+		vddlog("e", "Failed to initialize new Direct3DDevice");
+		return nullptr;
+	}
+
+	{
+		std::lock_guard<std::mutex> lock(s_DeviceCacheMutex);
+		s_DeviceCache[RenderAdapter] = Device;
+		logStream.str("");
+		logStream << "Created and cached new Direct3DDevice for LUID " << RenderAdapter.HighPart << "-" << RenderAdapter.LowPart << " (cache size now: " << s_DeviceCache.size() << ")";
+		vddlog("d", logStream.str().c_str());
+	}
+
+	return Device;
+}
+
+void IndirectDeviceContext::CleanupExpiredDevices()
+{
+	std::lock_guard<std::mutex> lock(s_DeviceCacheMutex);
+	
+	int removed = 0;
+	for (auto it = s_DeviceCache.begin(); it != s_DeviceCache.end();) {
+		// With shared_ptr cache, we only remove null devices (shouldn't happen)
+		if (!it->second) {
+			it = s_DeviceCache.erase(it);
+			removed++;
+		} else {
+			++it;
+		}
+	}
+	
+	if (removed > 0) {
+		stringstream logStream;
+		logStream << "Cleaned up " << removed << " null Direct3DDevice references from cache";
+		vddlog("d", logStream.str().c_str());
+	}
+}
 
 IndirectDeviceContext::IndirectDeviceContext(_In_ WDFDEVICE WdfDevice) :
 	m_WdfDevice(WdfDevice)
@@ -2665,19 +2774,25 @@ void IndirectDeviceContext::CreateMonitor(unsigned int index) {
 
 void IndirectDeviceContext::AssignSwapChain(IDDCX_MONITOR& Monitor, IDDCX_SWAPCHAIN SwapChain, LUID RenderAdapter, HANDLE NewFrameEvent)
 {
-	m_ProcessingThread.reset();
+	// Properly wait for existing thread to complete before creating new one
+	if (m_ProcessingThread) {
+		vddlog("d", "Waiting for existing processing thread to complete before reassignment.");
+		m_ProcessingThread.reset(); // This will call destructor which waits for thread completion
+		vddlog("d", "Existing processing thread completed.");
+	}
 
-	auto Device = make_shared<Direct3DDevice>(RenderAdapter);
-	if (FAILED(Device->Init()))
+	// Only cleanup expired devices periodically, not on every assignment
+	static int assignmentCount = 0;
+	if (++assignmentCount % 10 == 0) {
+		CleanupExpiredDevices();
+	}
+
+	auto Device = GetOrCreateDevice(RenderAdapter);
+	if (!Device)
 	{
-		vddlog("e", "D3D Initialization failed, deleting existing swap-chain.");
+		vddlog("e", "Failed to get or create Direct3DDevice, deleting existing swap-chain.");
 		WdfObjectDelete(SwapChain);
 		return;
-	}
-	HRESULT hr = Device->Init(); 
-	if (FAILED(hr))
-	{
-		vddlog("e", "Failed to initialize Direct3DDevice.");
 	}
 	else
 	{

@@ -14,6 +14,8 @@
 
 #include <memory>
 #include <vector>
+#include <map>
+#include <mutex>
 
 #include "Trace.h"
 
@@ -73,6 +75,19 @@ namespace Microsoft
         };
 
         /// <summary>
+        /// Custom comparator for LUID to be used in std::map
+        /// </summary>
+        struct LuidComparator
+        {
+            bool operator()(const LUID& a, const LUID& b) const
+            {
+                if (a.HighPart != b.HighPart)
+                    return a.HighPart < b.HighPart;
+                return a.LowPart < b.LowPart;
+            }
+        };
+
+        /// <summary>
         /// Provides a sample implementation of an indirect display driver.
         /// </summary>
         class IndirectDeviceContext
@@ -101,6 +116,12 @@ namespace Microsoft
         public:
             static const DISPLAYCONFIG_VIDEO_SIGNAL_INFO s_KnownMonitorModes[];
             static std::vector<BYTE> s_KnownMonitorEdid;
+
+        private:
+            static std::map<LUID, std::shared_ptr<Direct3DDevice>, LuidComparator> s_DeviceCache;
+            static std::mutex s_DeviceCacheMutex;
+            static std::shared_ptr<Direct3DDevice> GetOrCreateDevice(LUID RenderAdapter);
+            static void CleanupExpiredDevices();
         };
     }
 }
