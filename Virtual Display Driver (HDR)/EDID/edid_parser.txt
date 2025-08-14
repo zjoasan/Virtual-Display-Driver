@@ -1,0 +1,1001 @@
+#include <vector>
+#include <tuple>
+#include <fstream>
+#include <iostream>
+#include <algorithm>
+#include <cstring>
+#include <iomanip>
+#include <sstream>
+#include <map>
+#include <set>
+#include <cmath>
+
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
+struct VideoMode {
+    int x, y, Z, refresh;
+    VideoMode(int x, int y, int Z, int refresh) : x(x), y(y), Z(Z), refresh(refresh) {}
+};
+
+struct HDRMetadata {
+    bool hdr10_supported = false;
+    bool dolby_vision_supported = false;
+    bool hdr10_plus_supported = false;
+    double max_luminance = 0.0;
+    double min_luminance = 0.0;
+    double max_frame_avg_luminance = 0.0;
+    
+    // Static metadata type 1 (HDR10)
+    struct {
+        uint16_t display_primaries_x[3] = {0}; // R, G, B
+        uint16_t display_primaries_y[3] = {0};
+        uint16_t white_point_x = 0;
+        uint16_t white_point_y = 0;
+        uint16_t max_display_mastering_luminance = 0;
+        uint16_t min_display_mastering_luminance = 0;
+        uint16_t max_content_light_level = 0;
+        uint16_t max_frame_avg_light_level = 0;
+    } static_metadata_type1;
+};
+
+struct ColorProfile {
+    enum ColorSpace {
+        sRGB,
+        Rec709,
+        Rec2020,
+        DCI_P3,
+        Adobe_RGB,
+        UNKNOWN
+    };
+    
+    ColorSpace primary_colorspace = UNKNOWN;
+    std::vector<ColorSpace> supported_colorspaces;
+    double gamma = 2.2;
+    
+    // Chromaticity coordinates
+    double red_x = 0, red_y = 0;
+    double green_x = 0, green_y = 0;
+    double blue_x = 0, blue_y = 0;
+    double white_x = 0, white_y = 0;
+};
+
+class EDIDParser {
+private:
+    std::vector<uint8_t> edid_data;
+    std::vector<VideoMode> video_modes;
+    HDRMetadata hdr_metadata;
+    ColorProfile color_profile;
+    
+    // Helper functions
+    uint16_t read_uint16_le(const uint8_t* data) {
+        return data[0] | (data[1] << 8);
+    }
+    
+    uint16_t read_uint16_be(const uint8_t* data) {
+        return (data[0] << 8) | data[1];
+    }
+    
+    // Calculate Z multiplier for fractional refresh rates
+    int calculate_z_multiplier(double actual_refresh, int nominal_refresh) {
+        // For standard NTSC fractional rates (59.94, 29.97, 23.976)
+        if (std::abs(actual_refresh - nominal_refresh * 1000.0/1001.0) < 0.01) {
+            return 999; // 999/1000 = 0.999, which gives us the NTSC factor
+        }
+        return 1000; // For exact refresh rates
+    }
+    
+    void parse_base_edid() {
+        if (edid_data.size() < 128) return;
+        
+        std::cout << "=== Base EDID Analysis ===" << std::endl;
+        
+        // Check manufacturer ID
+        uint16_t mfg_id = read_uint16_be(&edid_data[8]);
+        char mfg_name[4] = {
+            (char)('@' + ((mfg_id >> 10) & 0x1F)),
+            (char)('@' + ((mfg_id >> 5) & 0x1F)),
+            (char)('@' + (mfg_id & 0x1F)),
+            0
+        };
+        std::cout << "Manufacturer: " << mfg_name << std::endl;
+        
+        // Check for known HDR-supporting manufacturers and models
+        uint16_t product_id = read_uint16_le(&edid_data[10]);
+        std::cout << "Product ID: 0x" << std::hex << product_id << std::dec << std::endl;
+        
+        // Check feature support (byte 24)
+        uint8_t feature_support = edid_data[24];
+        std::cout << "Feature support byte: 0x" << std::hex << (int)feature_support << std::dec << std::endl;
+        std::cout << "  Digital input: " << ((feature_support & 0x80) ? "Yes" : "No") << std::endl;
+        std::cout << "  Color depth: ";
+        if (feature_support & 0x80) {
+            uint8_t color_depth = (feature_support >> 4) & 0x07;
+            switch (color_depth) {
+                case 1: std::cout << "6 bits"; break;
+                case 2: std::cout << "8 bits"; break;
+                case 3: std::cout << "10 bits"; break;
+                case 4: std::cout << "12 bits"; break;
+                case 5: std::cout << "14 bits"; break;
+                case 6: std::cout << "16 bits"; break;
+                default: std::cout << "undefined"; break;
+            }
+        }
+        std::cout << std::endl;
+        
+        // Parse display descriptors (might contain HDR info)
+        std::cout << "Checking display descriptors for HDR hints..." << std::endl;
+        for (int i = 0; i < 4; i++) {
+            parse_display_descriptor(&edid_data[54 + i * 18], i);
+        }
+        
+        // Parse established timings (bytes 35-37)
+        parse_established_timings();
+        
+        // Parse standard timings (bytes 38-53)
+        parse_standard_timings();
+        
+        // Parse detailed timing descriptors (bytes 54-125)
+        for (int i = 0; i < 4; i++) {
+            if (edid_data[54 + i * 18] != 0 || edid_data[54 + i * 18 + 1] != 0) {
+                parse_detailed_timing_descriptor(&edid_data[54 + i * 18]);
+            }
+        }
+        
+        // Parse chromaticity (bytes 25-34)
+        parse_chromaticity();
+        
+        std::cout << "=== End Base EDID Analysis ===" << std::endl << std::endl;
+    }
+    
+    void parse_display_descriptor(const uint8_t* desc, int index) {
+        if (desc[0] == 0 && desc[1] == 0) {
+            // This is a display descriptor, not a timing
+            uint8_t desc_type = desc[3];
+            
+            std::cout << "  Display Descriptor " << index << " - Type: 0x" 
+                      << std::hex << (int)desc_type << std::dec;
+            
+            switch (desc_type) {
+                case 0xFF: 
+                    std::cout << " (Serial Number)"; 
+                    break;
+                case 0xFE: 
+                    std::cout << " (Unspecified Text)"; 
+                    break;
+                case 0xFD: 
+                    std::cout << " (Display Range Limits)";
+                    parse_display_range_limits(&desc[5]);
+                    break;
+                case 0xFC: 
+                    std::cout << " (Display Name)"; 
+                    break;
+                case 0xFB: 
+                    std::cout << " (Color Point Data)"; 
+                    break;
+                case 0xFA: 
+                    std::cout << " (Standard Timing IDs)"; 
+                    break;
+                case 0xF9: 
+                    std::cout << " (Display Color Management)"; 
+                    break;
+                case 0xF8: 
+                    std::cout << " (CVT 3-Byte Timing Codes)"; 
+                    break;
+                case 0xF7: 
+                    std::cout << " (Established Timings III)"; 
+                    break;
+                default: 
+                    std::cout << " (Unknown)"; 
+                    break;
+            }
+            std::cout << std::endl;
+            
+            // Dump descriptor data for analysis
+            std::cout << "    Data: ";
+            for (int i = 5; i < 18; i++) {
+                std::cout << std::hex << std::setw(2) << std::setfill('0') << (int)desc[i] << " ";
+            }
+            std::cout << std::dec << std::endl;
+        }
+    }
+    
+    void parse_display_range_limits(const uint8_t* range_data) {
+        std::cout << std::endl;
+        std::cout << "    Min V Rate: " << (int)range_data[0] << " Hz" << std::endl;
+        std::cout << "    Max V Rate: " << (int)range_data[1] << " Hz" << std::endl;
+        std::cout << "    Min H Rate: " << (int)range_data[2] << " kHz" << std::endl;
+        std::cout << "    Max H Rate: " << (int)range_data[3] << " kHz" << std::endl;
+        std::cout << "    Max Pixel Clock: " << (int)range_data[4] * 10 << " MHz" << std::endl;
+        
+        // Check for extended timing information (GTF, CVT, etc.)
+        if (range_data[5] != 0) {
+            std::cout << "    Timing formula: 0x" << std::hex << (int)range_data[5] << std::dec << std::endl;
+        }
+    }
+    
+    void parse_established_timings() {
+        const uint8_t* est = &edid_data[35];
+        
+        // Byte 35 - established timings I
+        if (est[0] & 0x80) video_modes.emplace_back(720, 400, 1000, 70);   // 720x400@70Hz
+        if (est[0] & 0x40) video_modes.emplace_back(720, 400, 1000, 88);   // 720x400@88Hz
+        if (est[0] & 0x20) video_modes.emplace_back(640, 480, 1000, 60);   // 640x480@60Hz
+        if (est[0] & 0x10) video_modes.emplace_back(640, 480, 1000, 67);   // 640x480@67Hz
+        if (est[0] & 0x08) video_modes.emplace_back(640, 480, 1000, 72);   // 640x480@72Hz
+        if (est[0] & 0x04) video_modes.emplace_back(640, 480, 1000, 75);   // 640x480@75Hz
+        if (est[0] & 0x02) video_modes.emplace_back(800, 600, 1000, 56);   // 800x600@56Hz
+        if (est[0] & 0x01) video_modes.emplace_back(800, 600, 1000, 60);   // 800x600@60Hz
+        
+        // Byte 36 - established timings II
+        if (est[1] & 0x80) video_modes.emplace_back(800, 600, 1000, 72);   // 800x600@72Hz
+        if (est[1] & 0x40) video_modes.emplace_back(800, 600, 1000, 75);   // 800x600@75Hz
+        if (est[1] & 0x20) video_modes.emplace_back(832, 624, 1000, 75);   // 832x624@75Hz
+        if (est[1] & 0x10) video_modes.emplace_back(1024, 768, 1000, 87);  // 1024x768@87Hz (interlaced)
+        if (est[1] & 0x08) video_modes.emplace_back(1024, 768, 1000, 60);  // 1024x768@60Hz
+        if (est[1] & 0x04) video_modes.emplace_back(1024, 768, 1000, 70);  // 1024x768@70Hz
+        if (est[1] & 0x02) video_modes.emplace_back(1024, 768, 1000, 75);  // 1024x768@75Hz
+        if (est[1] & 0x01) video_modes.emplace_back(1280, 1024, 1000, 75); // 1280x1024@75Hz
+    }
+    
+    void parse_standard_timings() {
+        for (int i = 0; i < 8; i++) {
+            const uint8_t* st = &edid_data[38 + i * 2];
+            
+            if (st[0] == 0x01 && st[1] == 0x01) continue; // Unused
+            
+            int h_active = (st[0] + 31) * 8;
+            int aspect_ratio = (st[1] >> 6) & 0x03;
+            int refresh = (st[1] & 0x3F) + 60;
+            
+            int v_active;
+            switch (aspect_ratio) {
+                case 0: v_active = h_active * 10 / 16; break; // 16:10
+                case 1: v_active = h_active * 3 / 4; break;   // 4:3
+                case 2: v_active = h_active * 4 / 5; break;   // 5:4
+                case 3: v_active = h_active * 9 / 16; break;  // 16:9
+            }
+            
+            video_modes.emplace_back(h_active, v_active, 1000, refresh);
+        }
+    }
+    
+    void parse_detailed_timing_descriptor(const uint8_t* dtd) {
+        if (dtd[0] == 0 && dtd[1] == 0) {
+            // Display descriptor, not timing
+            return;
+        }
+        
+        uint16_t pixel_clock = read_uint16_le(dtd) * 10; // in kHz
+        uint16_t h_active = dtd[2] | ((dtd[4] & 0xF0) << 4);
+        uint16_t h_blanking = dtd[3] | ((dtd[4] & 0x0F) << 8);
+        uint16_t v_active = dtd[5] | ((dtd[7] & 0xF0) << 4);
+        uint16_t v_blanking = dtd[6] | ((dtd[7] & 0x0F) << 8);
+        
+        if (h_active && v_active && pixel_clock) {
+            uint32_t total_pixels = (h_active + h_blanking) * (v_active + v_blanking);
+            double refresh_rate = (pixel_clock * 1000.0) / total_pixels;
+            
+            int nominal_refresh = static_cast<int>(refresh_rate + 0.5);
+            int z_multiplier = calculate_z_multiplier(refresh_rate, nominal_refresh);
+            
+            video_modes.emplace_back(h_active, v_active, z_multiplier, nominal_refresh);
+        }
+    }
+    
+    void parse_chromaticity() {
+        const uint8_t* chrom = &edid_data[25];
+        
+        // Extract chromaticity coordinates (10-bit precision)
+        color_profile.red_x = ((chrom[2] << 2) | (chrom[0] >> 6)) / 1024.0;
+        color_profile.red_y = ((chrom[3] << 2) | ((chrom[0] >> 4) & 0x03)) / 1024.0;
+        color_profile.green_x = ((chrom[4] << 2) | ((chrom[0] >> 2) & 0x03)) / 1024.0;
+        color_profile.green_y = ((chrom[5] << 2) | (chrom[0] & 0x03)) / 1024.0;
+        color_profile.blue_x = ((chrom[6] << 2) | (chrom[1] >> 6)) / 1024.0;
+        color_profile.blue_y = ((chrom[7] << 2) | ((chrom[1] >> 4) & 0x03)) / 1024.0;
+        color_profile.white_x = ((chrom[8] << 2) | ((chrom[1] >> 2) & 0x03)) / 1024.0;
+        color_profile.white_y = ((chrom[9] << 2) | (chrom[1] & 0x03)) / 1024.0;
+        
+        // Determine primary colorspace based on chromaticity
+        determine_primary_colorspace();
+    }
+    
+    void determine_primary_colorspace() {
+        // sRGB/Rec.709 coordinates (approximate)
+        const double srgb_red_x = 0.64, srgb_red_y = 0.33;
+        const double srgb_green_x = 0.30, srgb_green_y = 0.60;
+        const double srgb_blue_x = 0.15, srgb_blue_y = 0.06;
+        
+        // Rec.2020 coordinates
+        const double rec2020_red_x = 0.708, rec2020_red_y = 0.292;
+        const double rec2020_green_x = 0.170, rec2020_green_y = 0.797;
+        const double rec2020_blue_x = 0.131, rec2020_blue_y = 0.046;
+        
+        // DCI-P3 coordinates
+        const double dcip3_red_x = 0.680, dcip3_red_y = 0.320;
+        const double dcip3_green_x = 0.265, dcip3_green_y = 0.690;
+        const double dcip3_blue_x = 0.150, dcip3_blue_y = 0.060;
+        
+        double tolerance = 0.02;
+        
+        // Check for Rec.2020
+        if (std::abs(color_profile.red_x - rec2020_red_x) < tolerance &&
+            std::abs(color_profile.red_y - rec2020_red_y) < tolerance &&
+            std::abs(color_profile.green_x - rec2020_green_x) < tolerance &&
+            std::abs(color_profile.green_y - rec2020_green_y) < tolerance) {
+            color_profile.primary_colorspace = ColorProfile::Rec2020;
+            color_profile.supported_colorspaces.push_back(ColorProfile::Rec2020);
+        }
+        // Check for DCI-P3
+        else if (std::abs(color_profile.red_x - dcip3_red_x) < tolerance &&
+                 std::abs(color_profile.red_y - dcip3_red_y) < tolerance &&
+                 std::abs(color_profile.green_x - dcip3_green_x) < tolerance &&
+                 std::abs(color_profile.green_y - dcip3_green_y) < tolerance) {
+            color_profile.primary_colorspace = ColorProfile::DCI_P3;
+            color_profile.supported_colorspaces.push_back(ColorProfile::DCI_P3);
+        }
+        // Default to sRGB/Rec.709
+        else {
+            color_profile.primary_colorspace = ColorProfile::sRGB;
+            color_profile.supported_colorspaces.push_back(ColorProfile::sRGB);
+        }
+    }
+    
+    void parse_cea_extension(const uint8_t* cea_block) {
+        if (cea_block[0] != 0x02) return; // Not a CEA extension
+        
+        uint8_t dtd_start = cea_block[2];
+        if (dtd_start < 4) return;
+        
+        std::cout << "=== CEA Extension Block Debug ===" << std::endl;
+        std::cout << "CEA revision: " << (int)cea_block[1] << std::endl;
+        std::cout << "DTD start offset: " << (int)dtd_start << std::endl;
+        
+        // Dump the entire data block collection for debugging
+        std::cout << "Data block collection bytes (" << (dtd_start - 4) << " bytes): ";
+        for (uint8_t i = 4; i < dtd_start; i++) {
+            std::cout << std::hex << std::setw(2) << std::setfill('0') << (int)cea_block[i] << " ";
+        }
+        std::cout << std::dec << std::endl;
+        
+        // Parse data block collection
+        for (uint8_t offset = 4; offset < dtd_start; ) {
+            uint8_t tag_length = cea_block[offset];
+            uint8_t tag = (tag_length >> 5) & 0x07;
+            uint8_t length = tag_length & 0x1F;
+            
+            std::cout << "Data block at offset " << (int)offset << ": tag=" << (int)tag 
+                      << ", length=" << (int)length << std::endl;
+            
+            if (offset + 1 + length > dtd_start) {
+                std::cout << "ERROR: Data block extends beyond DTD start!" << std::endl;
+                break;
+            }
+            
+            // Dump block data
+            std::cout << "  Block data: ";
+            for (uint8_t i = 0; i < length; i++) {
+                std::cout << std::hex << std::setw(2) << std::setfill('0') 
+                          << (int)cea_block[offset + 1 + i] << " ";
+            }
+            std::cout << std::dec << std::endl;
+            
+            switch (tag) {
+                case 1: // Audio data block
+                    std::cout << "  → Audio Data Block" << std::endl;
+                    break;
+                case 2: // Video data block
+                    std::cout << "  → Video Data Block" << std::endl;
+                    parse_video_data_block(&cea_block[offset + 1], length);
+                    break;
+                case 3: // Vendor specific data block
+                    std::cout << "  → Vendor Specific Data Block" << std::endl;
+                    parse_vendor_specific_block(&cea_block[offset + 1], length);
+                    break;
+                case 4: // Speaker allocation data block
+                    std::cout << "  → Speaker Allocation Data Block" << std::endl;
+                    break;
+                case 7: // Extended tag
+                    std::cout << "  → Extended Tag Block" << std::endl;
+                    parse_extended_tag_block(&cea_block[offset + 1], length);
+                    break;
+                default:
+                    std::cout << "  → Unknown/Reserved Block (tag " << (int)tag << ")" << std::endl;
+                    break;
+            }
+            
+            offset += 1 + length;
+        }
+        
+        // Parse DTDs in CEA extension
+        std::cout << "Parsing DTDs starting at offset " << (int)dtd_start << std::endl;
+        for (uint8_t offset = dtd_start; offset + 18 <= 128; offset += 18) {
+            if (cea_block[offset] == 0 && cea_block[offset + 1] == 0) {
+                std::cout << "  Empty DTD slot at offset " << (int)offset << std::endl;
+                continue;
+            }
+            std::cout << "  Parsing DTD at offset " << (int)offset << std::endl;
+            parse_detailed_timing_descriptor(&cea_block[offset]);
+        }
+        
+        std::cout << "=== End CEA Extension Debug ===" << std::endl << std::endl;
+    }
+    
+    void parse_video_data_block(const uint8_t* vdb, uint8_t length) {
+        for (uint8_t i = 0; i < length; i++) {
+            uint8_t vic = vdb[i] & 0x7F;
+            bool native = (vdb[i] & 0x80) != 0;
+            
+            // Add video modes based on VIC (Video Identification Code)
+            add_vic_mode(vic);
+        }
+    }
+    
+    void add_vic_mode(uint8_t vic) {
+        struct VICMode {
+            int x, y, refresh;
+            bool fractional;
+        };
+        
+        static const std::map<uint8_t, VICMode> vic_table = {
+            {1, {640, 480, 60, false}}, {2, {720, 480, 60, true}}, {3, {720, 480, 60, true}}, {4, {1280, 720, 60, true}}, 
+            {5, {1920, 1080, 60, true}}, {6, {720, 480, 60, true}}, {7, {720, 480, 60, true}}, {8, {720, 240, 60, true}}, 
+            {9, {720, 240, 60, true}}, {10, {2880, 480, 60, true}}, {11, {2880, 480, 60, true}}, {12, {2880, 240, 60, true}}, 
+            {13, {2880, 240, 60, true}}, {14, {1440, 480, 60, true}}, {15, {1440, 480, 60, true}}, {16, {1920, 1080, 60, true}},
+            {17, {720, 576, 50, false}}, {18, {720, 576, 50, false}}, {19, {1280, 720, 50, false}}, {20, {1920, 1080, 50, false}},
+            {21, {720, 576, 50, false}}, {22, {720, 576, 50, false}}, {23, {720, 288, 50, false}}, {24, {720, 288, 50, false}},
+            {25, {2880, 576, 50, false}}, {26, {2880, 576, 50, false}}, {27, {2880, 288, 50, false}}, {28, {2880, 288, 50, false}},
+            {29, {1440, 576, 50, false}}, {30, {1440, 576, 50, false}}, {31, {1920, 1080, 50, false}}, {32, {1920, 1080, 24, true}},
+            {33, {1920, 1080, 25, false}}, {34, {1920, 1080, 30, true}}, {35, {2880, 480, 60, true}}, {36, {2880, 480, 60, true}},
+            {37, {2880, 576, 50, false}}, {38, {2880, 576, 50, false}}, {39, {1920, 1080, 50, false}}, {40, {1920, 1080, 100, false}},
+            {41, {1280, 720, 100, false}}, {42, {720, 576, 100, false}}, {43, {720, 576, 100, false}}, {44, {720, 576, 200, false}},
+            {45, {720, 576, 200, false}}, {46, {1920, 1080, 120, true}}, {47, {1280, 720, 120, true}}, {48, {720, 480, 120, true}},
+            {49, {720, 480, 120, true}}, {50, {720, 480, 240, true}}, {51, {720, 480, 240, true}}, {52, {720, 576, 200, false}},
+            {53, {720, 576, 200, false}}, {54, {720, 576, 240, false}}, {55, {720, 576, 240, false}}, {56, {720, 480, 240, true}},
+            {57, {720, 480, 240, true}}, {58, {1280, 720, 120, true}}, {59, {1920, 1080, 120, true}}, {60, {1280, 720, 24, false}},
+            {61, {1280, 720, 25, false}}, {62, {1280, 720, 30, false}}, {63, {1920, 1080, 120, false}}, {64, {1920, 1080, 100, false}},
+            {65, {1280, 720, 24, false}}, {66, {1280, 720, 25, false}}, {67, {1280, 720, 30, false}}, {68, {1280, 720, 50, false}},
+            {69, {1280, 720, 60, false}}, {70, {1280, 720, 100, false}}, {71, {1280, 720, 120, false}}, {72, {1920, 1080, 24, false}},
+            {73, {1920, 1080, 25, false}}, {74, {1920, 1080, 30, false}}, {75, {1920, 1080, 50, false}}, {76, {1920, 1080, 60, false}},
+            {77, {1920, 1080, 100, false}}, {78, {1920, 1080, 120, false}}, {79, {1680, 720, 24, false}}, {80, {1680, 720, 25, false}},
+            {81, {1680, 720, 30, false}}, {82, {1680, 720, 50, false}}, {83, {1680, 720, 60, false}}, {84, {1680, 720, 100, false}},
+            {85, {1680, 720, 120, false}}, {86, {2560, 1080, 24, false}}, {87, {2560, 1080, 25, false}}, {88, {2560, 1080, 30, false}},
+            {89, {2560, 1080, 50, false}}, {90, {2560, 1080, 60, false}}, {91, {2560, 1080, 100, false}}, {92, {2560, 1080, 120, false}},
+            {93, {3840, 2160, 24, false}}, {94, {3840, 2160, 25, false}}, {95, {3840, 2160, 30, true}}, {96, {3840, 2160, 50, false}},
+            {97, {3840, 2160, 60, true}}, {98, {4096, 2160, 24, true}}, {99, {4096, 2160, 25, false}}, {100, {4096, 2160, 30, true}},
+            {101, {4096, 2160, 50, false}}, {102, {4096, 2160, 60, true}}, {103, {3840, 2160, 24, false}}, {104, {3840, 2160, 25, false}},
+            {105, {3840, 2160, 30, false}}, {106, {3840, 2160, 50, false}}, {107, {3840, 2160, 60, false}}, {108, {1280, 720, 48, false}},
+            {109, {1280, 720, 48, false}}, {110, {1680, 720, 48, false}}, {111, {1920, 1080, 48, false}}, {112, {1920, 1080, 48, false}},
+            {113, {2560, 1080, 48, false}}, {114, {3840, 2160, 48, false}}, {115, {4096, 2160, 48, false}}, {116, {3840, 2160, 100, false}},
+            {117, {3840, 2160, 120, false}}, {118, {3840, 2160, 100, false}}, {119, {3840, 2160, 120, false}}, {120, {3840, 2160, 100, false}},
+            {121, {5120, 2160, 24, false}}, {122, {5120, 2160, 25, false}}, {123, {5120, 2160, 30, true}}, {124, {5120, 2160, 48, false}},
+            {125, {5120, 2160, 50, false}}, {126, {5120, 2160, 60, true}}, {127, {5120, 2160, 100, false}}, {193, {5120, 2160, 120, false}},
+            {194, {7680, 4320, 24, false}}, {195, {7680, 4320, 25, false}}, {196, {7680, 4320, 30, true}}, {197, {7680, 4320, 48, false}},
+            {198, {7680, 4320, 50, false}}, {199, {7680, 4320, 60, true}}, {200, {7680, 4320, 100, false}}, {201, {7680, 4320, 120, false}},
+            {202, {7680, 4320, 24, false}}, {203, {7680, 4320, 25, false}}, {204, {7680, 4320, 30, false}}, {205, {7680, 4320, 48, false}},
+            {206, {7680, 4320, 50, false}}, {207, {7680, 4320, 60, false}}, {208, {7680, 4320, 100, false}}, {209, {7680, 4320, 120, false}},
+            {210, {10240, 4320, 24, false}}, {211, {10240, 4320, 25, false}}, {212, {10240, 4320, 30, true}}, {213, {10240, 4320, 48, false}},
+            {214, {10240, 4320, 50, false}}, {215, {10240, 4320, 60, true}}, {216, {10240, 4320, 100, false}}, {217, {10240, 4320, 120, false}},
+            {218, {4096, 2160, 100, false}}, {219, {4096, 2160, 120, false}}
+        };
+        
+        auto it = vic_table.find(vic);
+        if (it != vic_table.end()) {
+            const VICMode& mode = it->second;
+            int z_multiplier = mode.fractional ? 999 : 1000;
+            video_modes.emplace_back(mode.x, mode.y, z_multiplier, mode.refresh);
+        }
+    }
+    
+    void parse_vendor_specific_block(const uint8_t* vsdb, uint8_t length) {
+        if (length < 3) return;
+        
+        // Check for vendor OUI
+        uint32_t oui = vsdb[0] | (vsdb[1] << 8) | (vsdb[2] << 16);
+        
+        std::cout << "  Vendor Specific Data Block:" << std::endl;
+        std::cout << "    OUI: 0x" << std::hex << std::setw(6) << std::setfill('0') << oui << std::dec << std::endl;
+        
+        if (oui == 0x000C03) { // HDMI LLC OUI
+            std::cout << "    → HDMI LLC Vendor Specific Data Block" << std::endl;
+            if (length > 5) {
+                // Parse HDMI capabilities
+                std::cout << "    HDMI capabilities found" << std::endl;
+            }
+        } else if (oui == 0x00001A) { // Dolby Laboratories OUI
+            std::cout << "    → Dolby Laboratories Vendor Specific Data Block" << std::endl;
+            parse_dolby_vendor_block(&vsdb[3], length - 3);
+        } else if (oui == 0x90848B) { // HDR10+ Technologies OUI  
+            std::cout << "    → HDR10+ Technologies Vendor Specific Data Block" << std::endl;
+            parse_hdr10plus_vendor_block(&vsdb[3], length - 3);
+        } else {
+            std::cout << "    → Unknown Vendor (OUI: 0x" << std::hex << oui << std::dec << ")" << std::endl;
+            // Dump unknown vendor data
+            std::cout << "    Data: ";
+            for (uint8_t i = 3; i < length; i++) {
+                std::cout << std::hex << std::setw(2) << std::setfill('0') << (int)vsdb[i] << " ";
+            }
+            std::cout << std::dec << std::endl;
+        }
+    }
+    
+    void parse_dolby_vendor_block(const uint8_t* dolby_data, uint8_t length) {
+        std::cout << "      Dolby Vendor Block parsing:" << std::endl;
+        std::cout << "      Length: " << (int)length << " bytes" << std::endl;
+        
+        if (length > 0) {
+            std::cout << "      Dolby data: ";
+            for (uint8_t i = 0; i < length; i++) {
+                std::cout << std::hex << std::setw(2) << std::setfill('0') << (int)dolby_data[i] << " ";
+            }
+            std::cout << std::dec << std::endl;
+            
+            // Dolby Vision is often indicated by presence of this vendor block
+            hdr_metadata.dolby_vision_supported = true;
+            std::cout << "      Dolby Vision Support Detected!" << std::endl;
+            
+            if (length >= 1) {
+                uint8_t dolby_caps = dolby_data[0];
+                std::cout << "      Dolby capabilities: 0x" << std::hex << (int)dolby_caps << std::dec << std::endl;
+                
+                // Parse Dolby Vision profiles/modes if present
+                if (length >= 2) {
+                    uint8_t profiles = dolby_data[1];
+                    std::cout << "      Dolby Vision profiles: 0x" << std::hex << (int)profiles << std::dec << std::endl;
+                }
+            }
+        }
+    }
+    
+    void parse_hdr10plus_vendor_block(const uint8_t* hdr10plus_data, uint8_t length) {
+        std::cout << "      HDR10+ Vendor Block parsing:" << std::endl;
+        std::cout << "      Length: " << (int)length << " bytes" << std::endl;
+        
+        if (length > 0) {
+            std::cout << "      HDR10+ data: ";
+            for (uint8_t i = 0; i < length; i++) {
+                std::cout << std::hex << std::setw(2) << std::setfill('0') << (int)hdr10plus_data[i] << " ";
+            }
+            std::cout << std::dec << std::endl;
+            
+            hdr_metadata.hdr10_plus_supported = true;
+            std::cout << "      HDR10+ Support Detected!" << std::endl;
+        }
+    }
+    
+    void parse_extended_tag_block(const uint8_t* etb, uint8_t length) {
+        if (length < 1) return;
+        
+        uint8_t extended_tag = etb[0];
+        
+        std::cout << "    Extended tag: 0x" << std::hex << (int)extended_tag << std::dec 
+                  << " (" << (int)extended_tag << "), payload length: " << (int)(length - 1) << std::endl;
+        
+        // Dump payload
+        std::cout << "    Payload: ";
+        for (uint8_t i = 1; i < length; i++) {
+            std::cout << std::hex << std::setw(2) << std::setfill('0') << (int)etb[i] << " ";
+        }
+        std::cout << std::dec << std::endl;
+        
+        switch (extended_tag) {
+            case 0x00: std::cout << "    → Video Capability Data Block" << std::endl; break;
+            case 0x01: std::cout << "    → Vendor-Specific Video Data Block" << std::endl; break;
+            case 0x02: std::cout << "    → VESA Display Device Data Block" << std::endl; break;
+            case 0x03: std::cout << "    → VESA Video Timing Block Extension" << std::endl; break;
+            case 0x04: std::cout << "    → HDMI Video Data Block" << std::endl; break;
+            case 0x05: std::cout << "    → Colorimetry Data Block" << std::endl; break;
+            case 0x06: 
+                std::cout << "    → HDR Static Metadata Data Block" << std::endl;
+                parse_hdr_static_metadata(&etb[1], length - 1);
+                break;
+            case 0x07: 
+                std::cout << "    → HDR Dynamic Metadata Data Block" << std::endl;
+                parse_hdr_dynamic_metadata(&etb[1], length - 1);
+                break;
+            case 0x08: std::cout << "    → Video Format Preference Data Block" << std::endl; break;
+            case 0x09: std::cout << "    → YCbCr 4:2:0 Video Data Block" << std::endl; break;
+            case 0x0A: std::cout << "    → YCbCr 4:2:0 Capability Map Data Block" << std::endl; break;
+            case 0x0B: std::cout << "    → Miscellaneous Audio Fields" << std::endl; break;
+            case 0x0C: std::cout << "    → Vendor-Specific Audio Data Block" << std::endl; break;
+            case 0x0D: std::cout << "    → HDMI Audio Data Block" << std::endl; break;
+            case 0x0E: std::cout << "    → Room Configuration Data Block" << std::endl; break;
+            case 0x0F: std::cout << "    → Speaker Location Data Block" << std::endl; break;
+            case 0x10: std::cout << "    → Infoframe Data Block" << std::endl; break;
+            case 0x11: std::cout << "    → DisplayID Type VII Video Timing Data Block" << std::endl; break;
+            case 0x12: 
+                std::cout << "    → HDMI Forum Vendor Specific Data Block" << std::endl;
+                parse_hdmi_forum_vsdb(&etb[1], length - 1);
+                break;
+            case 0x13: std::cout << "    → Device Resource Allocation Data Block" << std::endl; break;
+            default:
+                std::cout << "    → Unknown Extended Tag (0x" << std::hex << (int)extended_tag << std::dec << ")" << std::endl;
+                break;
+        }
+    }
+    
+    void parse_hdr_static_metadata(const uint8_t* hdr_data, uint8_t length) {
+        std::cout << "      HDR Static Metadata parsing:" << std::endl;
+        std::cout << "      Length: " << (int)length << " bytes" << std::endl;
+        
+        if (length < 2) {
+            std::cout << "      ERROR: HDR Static Metadata too short!" << std::endl;
+            return;
+        }
+        
+        uint8_t eotf_support = hdr_data[0];
+        uint8_t metadata_type_support = hdr_data[1];
+        
+        std::cout << "      EOTF support byte: 0x" << std::hex << (int)eotf_support << std::dec << std::endl;
+        std::cout << "        SDR Gamma: " << ((eotf_support & 0x01) ? "Yes" : "No") << std::endl;
+        std::cout << "        HDR Gamma: " << ((eotf_support & 0x02) ? "Yes" : "No") << std::endl;
+        std::cout << "        SMPTE ST2084 (HDR10): " << ((eotf_support & 0x04) ? "Yes" : "No") << std::endl;
+        std::cout << "        Hybrid Log-Gamma (HLG): " << ((eotf_support & 0x08) ? "Yes" : "No") << std::endl;
+        
+        std::cout << "      Metadata type support: 0x" << std::hex << (int)metadata_type_support << std::dec << std::endl;
+        std::cout << "        Static Metadata Type 1: " << ((metadata_type_support & 0x01) ? "Yes" : "No") << std::endl;
+        
+        // EOTF support
+        hdr_metadata.hdr10_supported = (eotf_support & 0x04) != 0; // PQ (SMPTE ST 2084)
+        
+        // Static metadata type 1 support (HDR10)
+        if (metadata_type_support & 0x01) {
+            std::cout << "      Processing Static Metadata Type 1..." << std::endl;
+            
+            if (length >= 3) {
+                hdr_metadata.static_metadata_type1.max_display_mastering_luminance = hdr_data[2];
+                std::cout << "      Max Display Mastering Luminance (raw): " << (int)hdr_data[2] << std::endl;
+            }
+            if (length >= 4) {
+                hdr_metadata.static_metadata_type1.min_display_mastering_luminance = hdr_data[3];
+                std::cout << "      Min Display Mastering Luminance (raw): " << (int)hdr_data[3] << std::endl;
+            }
+            if (length >= 5) {
+                hdr_metadata.static_metadata_type1.max_content_light_level = hdr_data[4];
+                std::cout << "      Max Content Light Level (raw): " << (int)hdr_data[4] << std::endl;
+            }
+            if (length >= 6) {
+                hdr_metadata.static_metadata_type1.max_frame_avg_light_level = hdr_data[5];
+                std::cout << "      Max Frame Avg Light Level (raw): " << (int)hdr_data[5] << std::endl;
+            }
+        }
+        
+        // Convert to actual luminance values
+        if (hdr_metadata.static_metadata_type1.max_display_mastering_luminance > 0) {
+            hdr_metadata.max_luminance = 50.0 * std::pow(2.0, hdr_metadata.static_metadata_type1.max_display_mastering_luminance / 32.0);
+            std::cout << "      Calculated Max Luminance: " << hdr_metadata.max_luminance << " nits" << std::endl;
+        }
+        
+        if (hdr_metadata.static_metadata_type1.min_display_mastering_luminance > 0) {
+            hdr_metadata.min_luminance = (hdr_metadata.static_metadata_type1.min_display_mastering_luminance / 255.0) * 
+                                        (hdr_metadata.max_luminance / 100.0);
+            std::cout << "      Calculated Min Luminance: " << hdr_metadata.min_luminance << " nits" << std::endl;
+        }
+        
+        std::cout << "      HDR10 Support Set: " << (hdr_metadata.hdr10_supported ? "Yes" : "No") << std::endl;
+    }
+    
+    void parse_hdr_dynamic_metadata(const uint8_t* hdr_data, uint8_t length) {
+        std::cout << "      HDR Dynamic Metadata parsing:" << std::endl;
+        std::cout << "      Length: " << (int)length << " bytes" << std::endl;
+        
+        if (length < 1) {
+            std::cout << "      ERROR: HDR Dynamic Metadata too short!" << std::endl;
+            return;
+        }
+        
+        uint8_t type_support = hdr_data[0];
+        
+        std::cout << "      Type support byte: 0x" << std::hex << (int)type_support << std::dec << std::endl;
+        std::cout << "        Type 1 (HDR10): " << ((type_support & 0x01) ? "Yes" : "No") << std::endl;
+        std::cout << "        Type 2 (Dolby Vision): " << ((type_support & 0x02) ? "Yes" : "No") << std::endl;
+        std::cout << "        Type 3: " << ((type_support & 0x04) ? "Yes" : "No") << std::endl;
+        std::cout << "        Type 4 (HDR10+): " << ((type_support & 0x08) ? "Yes" : "No") << std::endl;
+        
+        // Dynamic metadata type support
+        hdr_metadata.hdr10_plus_supported = (type_support & 0x08) != 0; // HDR10+ is often type 4
+        hdr_metadata.dolby_vision_supported = (type_support & 0x02) != 0; // Dolby Vision
+        
+        if (length > 1) {
+            std::cout << "      Additional bytes: ";
+            for (uint8_t i = 1; i < length; i++) {
+                std::cout << std::hex << std::setw(2) << std::setfill('0') << (int)hdr_data[i] << " ";
+            }
+            std::cout << std::dec << std::endl;
+        }
+        
+        std::cout << "      HDR10+ Support Set: " << (hdr_metadata.hdr10_plus_supported ? "Yes" : "No") << std::endl;
+        std::cout << "      Dolby Vision Support Set: " << (hdr_metadata.dolby_vision_supported ? "Yes" : "No") << std::endl;
+    }
+    
+    void parse_hdmi_forum_vsdb(const uint8_t* hf_data, uint8_t length) {
+        if (length < 4) return;
+        
+        // HDMI Forum VSDB provides additional capabilities
+        // This can include higher refresh rates, VRR support, etc.
+    }
+
+public:
+    bool load_edid_file(const std::string& filename) {
+        std::ifstream file(filename, std::ios::binary);
+        if (!file.is_open()) {
+            std::cerr << "Error: Cannot open file " << filename << std::endl;
+            return false;
+        }
+        
+        file.seekg(0, std::ios::end);
+        size_t file_size = file.tellg();
+        file.seekg(0, std::ios::beg);
+        
+        edid_data.resize(file_size);
+        file.read(reinterpret_cast<char*>(edid_data.data()), file_size);
+        
+        if (file_size < 128) {
+            std::cerr << "Error: EDID file too small" << std::endl;
+            return false;
+        }
+        
+        return true;
+    }
+    
+    void parse_edid() {
+        video_modes.clear();
+        
+        std::cout << "=== EDID Parsing Debug ===" << std::endl;
+        std::cout << "Total EDID size: " << edid_data.size() << " bytes" << std::endl;
+        
+        // Parse base EDID (first 128 bytes)
+        std::cout << "Parsing base EDID (128 bytes)..." << std::endl;
+        parse_base_edid();
+        
+        // Parse extensions
+        if (edid_data.size() > 128) {
+            uint8_t extension_count = edid_data[126];
+            std::cout << "Extension count: " << (int)extension_count << std::endl;
+            
+            for (int ext = 0; ext < extension_count && (ext + 2) * 128 <= edid_data.size(); ext++) {
+                const uint8_t* extension = &edid_data[128 + ext * 128];
+                
+                std::cout << "Extension " << (ext + 1) << " type: 0x" << std::hex 
+                          << (int)extension[0] << std::dec << std::endl;
+                
+                // Dump first 16 bytes of extension for debugging
+                std::cout << "Extension " << (ext + 1) << " header: ";
+                for (int i = 0; i < 16 && i < 128; i++) {
+                    std::cout << std::hex << std::setw(2) << std::setfill('0') 
+                              << (int)extension[i] << " ";
+                }
+                std::cout << std::dec << std::endl;
+                
+                switch (extension[0]) {
+                    case 0x02: // CEA extension
+                        std::cout << "Processing CEA extension..." << std::endl;
+                        parse_cea_extension(extension);
+                        break;
+                    case 0xF0: // DisplayID extension
+                        std::cout << "DisplayID extension found (not implemented)" << std::endl;
+                        break;
+                    default:
+                        std::cout << "Unknown extension type: 0x" << std::hex 
+                                  << (int)extension[0] << std::dec << std::endl;
+                        break;
+                }
+            }
+        } else {
+            std::cout << "No extensions found" << std::endl;
+        }
+        
+        // Remove duplicates
+        std::cout << "Video modes before deduplication: " << video_modes.size() << std::endl;
+        std::sort(video_modes.begin(), video_modes.end(), 
+                  [](const VideoMode& a, const VideoMode& b) {
+                      if (a.x != b.x) return a.x < b.x;
+                      if (a.y != b.y) return a.y < b.y;
+                      if (a.refresh != b.refresh) return a.refresh < b.refresh;
+                      return a.Z < b.Z;
+                  });
+        
+        video_modes.erase(std::unique(video_modes.begin(), video_modes.end(),
+                                      [](const VideoMode& a, const VideoMode& b) {
+                                          return a.x == b.x && a.y == b.y && 
+                                                 a.refresh == b.refresh && a.Z == b.Z;
+                                      }), 
+                          video_modes.end());
+        
+        std::cout << "Video modes after deduplication: " << video_modes.size() << std::endl;
+        std::cout << "=== End EDID Parsing Debug ===" << std::endl << std::endl;
+    }
+    
+    std::vector<std::tuple<int, int, int, int>> get_video_modes() const {
+        std::vector<std::tuple<int, int, int, int>> modes;
+        for (const auto& mode : video_modes) {
+            modes.emplace_back(mode.x, mode.y, mode.Z, mode.refresh);
+        }
+        return modes;
+    }
+    
+    const HDRMetadata& get_hdr_metadata() const {
+        return hdr_metadata;
+    }
+    
+    const ColorProfile& get_color_profile() const {
+        return color_profile;
+    }
+    
+    std::string generate_iddcx_profile() const {
+        std::stringstream profile;
+        
+        // Find highest specs mode
+        auto highest_mode = std::max_element(video_modes.begin(), video_modes.end(),
+            [](const VideoMode& a, const VideoMode& b) {
+                int pixels_a = a.x * a.y;
+                int pixels_b = b.x * b.y;
+                if (pixels_a != pixels_b) return pixels_a < pixels_b;
+                return a.refresh < b.refresh;
+            });
+        
+        if (highest_mode == video_modes.end()) {
+            return "No video modes found";
+        }
+        
+        profile << "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n";
+        profile << "<IddCxMonitorConfig>\n";
+        profile << "  <MonitorModes>\n";
+        
+        // Add all video modes
+        for (const auto& mode : video_modes) {
+            double actual_refresh = (mode.Z * mode.refresh) / 1000.0;
+            
+            profile << "    <MonitorMode>\n";
+            profile << "      <Width>" << mode.x << "</Width>\n";
+            profile << "      <Height>" << mode.y << "</Height>\n";
+            profile << "      <RefreshRate>" << std::fixed << std::setprecision(3) << actual_refresh << "</RefreshRate>\n";
+            profile << "      <RefreshRateMultiplier>" << mode.Z << "</RefreshRateMultiplier>\n";
+            profile << "      <NominalRefreshRate>" << mode.refresh << "</NominalRefreshRate>\n";
+            profile << "    </MonitorMode>\n";
+        }
+        
+        profile << "  </MonitorModes>\n";
+        
+        // HDR capabilities
+        if (hdr_metadata.hdr10_supported || hdr_metadata.dolby_vision_supported) {
+            profile << "  <HDRCapabilities>\n";
+            profile << "    <HDR10Supported>" << (hdr_metadata.hdr10_supported ? "true" : "false") << "</HDR10Supported>\n";
+            profile << "    <DolbyVisionSupported>" << (hdr_metadata.dolby_vision_supported ? "true" : "false") << "</DolbyVisionSupported>\n";
+            profile << "    <HDR10PlusSupported>" << (hdr_metadata.hdr10_plus_supported ? "true" : "false") << "</HDR10PlusSupported>\n";
+            
+            if (hdr_metadata.max_luminance > 0) {
+                profile << "    <MaxLuminance>" << hdr_metadata.max_luminance << "</MaxLuminance>\n";
+            }
+            if (hdr_metadata.min_luminance > 0) {
+                profile << "    <MinLuminance>" << hdr_metadata.min_luminance << "</MinLuminance>\n";
+            }
+            
+            profile << "  </HDRCapabilities>\n";
+        }
+        
+        // Color profile
+        profile << "  <ColorProfile>\n";
+        
+        std::string colorspace_name;
+        switch (color_profile.primary_colorspace) {
+            case ColorProfile::sRGB: colorspace_name = "sRGB"; break;
+            case ColorProfile::Rec709: colorspace_name = "Rec709"; break;
+            case ColorProfile::Rec2020: colorspace_name = "Rec2020"; break;
+            case ColorProfile::DCI_P3: colorspace_name = "DCI-P3"; break;
+            case ColorProfile::Adobe_RGB: colorspace_name = "Adobe RGB"; break;
+            default: colorspace_name = "Unknown"; break;
+        }
+        
+        profile << "    <PrimaryColorSpace>" << colorspace_name << "</PrimaryColorSpace>\n";
+        profile << "    <Gamma>" << color_profile.gamma << "</Gamma>\n";
+        
+        profile << "    <Chromaticity>\n";
+        profile << "      <RedX>" << std::fixed << std::setprecision(4) << color_profile.red_x << "</RedX>\n";
+        profile << "      <RedY>" << color_profile.red_y << "</RedY>\n";
+        profile << "      <GreenX>" << color_profile.green_x << "</GreenX>\n";
+        profile << "      <GreenY>" << color_profile.green_y << "</GreenY>\n";
+        profile << "      <BlueX>" << color_profile.blue_x << "</BlueX>\n";
+        profile << "      <BlueY>" << color_profile.blue_y << "</BlueY>\n";
+        profile << "      <WhiteX>" << color_profile.white_x << "</WhiteX>\n";
+        profile << "      <WhiteY>" << color_profile.white_y << "</WhiteY>\n";
+        profile << "    </Chromaticity>\n";
+        profile << "  </ColorProfile>\n";
+        
+        // Preferred mode (highest specs)
+        profile << "  <PreferredMode>\n";
+        profile << "    <Width>" << highest_mode->x << "</Width>\n";
+        profile << "    <Height>" << highest_mode->y << "</Height>\n";
+        profile << "    <RefreshRate>" << std::fixed << std::setprecision(3) << (highest_mode->Z * highest_mode->refresh) / 1000.0 << "</RefreshRate>\n";
+        profile << "  </PreferredMode>\n";
+        
+        profile << "</IddCxMonitorConfig>\n";
+        
+        return profile.str();
+    }
+    
+    void print_summary() const {
+        std::cout << "=== EDID Parser Results ===" << std::endl;
+        std::cout << "Video Modes Found: " << video_modes.size() << std::endl;
+        
+        for (const auto& mode : video_modes) {
+            double actual_refresh = (mode.Z * mode.refresh) / 1000.0;
+            std::cout << "  " << mode.x << "x" << mode.y << "@" 
+                      << std::fixed << std::setprecision(2) << actual_refresh << "Hz"
+                      << " (Z=" << mode.Z << ", nominal=" << mode.refresh << "Hz)" << std::endl;
+        }
+        
+        std::cout << "\nHDR Support:" << std::endl;
+        std::cout << "  HDR10: " << (hdr_metadata.hdr10_supported ? "Yes" : "No") << std::endl;
+        std::cout << "  Dolby Vision: " << (hdr_metadata.dolby_vision_supported ? "Yes" : "No") << std::endl;
+        std::cout << "  HDR10+: " << (hdr_metadata.hdr10_plus_supported ? "Yes" : "No") << std::endl;
+        
+        if (hdr_metadata.max_luminance > 0) {
+            std::cout << "  Max Luminance: " << hdr_metadata.max_luminance << " nits" << std::endl;
+        }
+        if (hdr_metadata.min_luminance > 0) {
+            std::cout << "  Min Luminance: " << hdr_metadata.min_luminance << " nits" << std::endl;
+        }
+        
+        std::cout << "\nColor Profile:" << std::endl;
+        std::string colorspace_name;
+        switch (color_profile.primary_colorspace) {
+            case ColorProfile::sRGB: colorspace_name = "sRGB/Rec.709"; break;
+            case ColorProfile::Rec709: colorspace_name = "Rec.709"; break;
+            case ColorProfile::Rec2020: colorspace_name = "Rec.2020"; break;
+            case ColorProfile::DCI_P3: colorspace_name = "DCI-P3"; break;
+            case ColorProfile::Adobe_RGB: colorspace_name = "Adobe RGB"; break;
+            default: colorspace_name = "Unknown"; break;
+        }
+        std::cout << "  Primary Colorspace: " << colorspace_name << std::endl;
+        std::cout << "  Gamma: " << color_profile.gamma << std::endl;
+        std::cout << "  Chromaticity - Red: (" << std::fixed << std::setprecision(3) 
+                  << color_profile.red_x << ", " << color_profile.red_y << ")" << std::endl;
+        std::cout << "  Chromaticity - Green: (" << color_profile.green_x << ", " << color_profile.green_y << ")" << std::endl;
+        std::cout << "  Chromaticity - Blue: (" << color_profile.blue_x << ", " << color_profile.blue_y << ")" << std::endl;
+        std::cout << "  Chromaticity - White: (" << color_profile.white_x << ", " << color_profile.white_y << ")" << std::endl;
+    }
+};
+
+// Usage example and main function
+int main(int argc, char* argv[]) {
+    if (argc != 2) {
+        std::cout << "Usage: " << argv[0] << " <edid.bin>" << std::endl;
+        return 1;
+    }
+    
+    EDIDParser parser;
+    
+    if (!parser.load_edid_file(argv[1])) {
+        return 1;
+    }
+    
+    parser.parse_edid();
+    
+    // Get video modes as requested tuple format
+    auto modes = parser.get_video_modes();
+    
+    std::cout << "Video modes in tuple format {x, y, Z, refresh}:" << std::endl;
+    for (const auto& mode : modes) {
+        std::cout << "{" << std::get<0>(mode) << ", " << std::get<1>(mode) 
+                  << ", " << std::get<2>(mode) << ", " << std::get<3>(mode) << "}" << std::endl;
+    }
+    
+    std::cout << std::endl;
+    parser.print_summary();
+    
+    // Generate IDDCX profile
+    std::cout << "\n=== IDDCX Profile ===" << std::endl;
+    std::cout << parser.generate_iddcx_profile() << std::endl;
+    
+    // Save profile to file
+    std::ofstream profile_file("monitor_profile.xml");
+    if (profile_file.is_open()) {
+        profile_file << parser.generate_iddcx_profile();
+        profile_file.close();
+        std::cout << "\nIDDCX profile saved to monitor_profile.xml" << std::endl;
+    }
+    
+    return 0;
+}

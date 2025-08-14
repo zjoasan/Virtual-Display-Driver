@@ -16,8 +16,22 @@
 #include <vector>
 #include <map>
 #include <mutex>
+#include <string>
+#include <sstream>
 
 #include "Trace.h"
+
+// Utility function declarations
+std::vector<std::string> split(std::string& input, char delimiter);
+std::string WStringToString(const std::wstring& wstr);
+
+// Phase 5: Final Integration function declarations
+NTSTATUS ValidateEdidIntegration();
+NTSTATUS PerformanceMonitor();
+NTSTATUS CreateFallbackConfiguration();
+NTSTATUS ValidateAndSanitizeConfiguration();
+NTSTATUS RunComprehensiveDiagnostics();
+NTSTATUS InitializePhase5Integration();
 
 namespace Microsoft
 {
