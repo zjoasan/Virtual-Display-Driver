@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<versions>
+    <release>
+        <name>Virtual Driver Control</name>
+        <build>25.7.22</build>
+        <link>https://github.com/yourusername/yourrepo/releases/download/v25.7.22/VirtualDriverControl-25.7.22.zip</link>
+        <description>Stable release with signed drivers and core functionality</description>
+    </release>
+    
+    <beta>
+        <name>Virtual Driver Control</name>
+        <build>25.7.23</build>
+        <link>https://github.com/VirtualDrivers/Virtual-Display-Driver/releases/tag/25.7.23</link>
+        <description>Installer-less portable app with Install/Uninstall support, RELOAD_DRIVER functionality, officially signed drivers, and alpha XML Editor feature. Fixed Win 10 installation and RESTART_DRIVER issues.</description>
+    </beta>
+    
+    <alpha>
+        <name>Virtual Driver Control</name>
+        <build>25.7.24</build>
+        <link>https://github.com/yourusername/yourrepo/releases/download/v25.7.24/VirtualDriverControl-25.7.24.zip</link>
+        <description>Development build with experimental features - for testing only</description>
+    </alpha>
+</versions>
