@@ -16,7 +16,7 @@
     
     <alpha>
         <name>Virtual Driver Control</name>
-        <build>25.7.24</build>
+        <build>25.8.14</build>
         <link>https://github.com/yourusername/yourrepo/releases/download/v25.7.24/VirtualDriverControl-25.7.24.zip</link>
         <description>Development build with experimental features - for testing only</description>
     </alpha>
