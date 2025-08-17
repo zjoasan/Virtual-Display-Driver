@@ -95,7 +95,7 @@ jobs:
         token: ${{ secrets.GITHUB_TOKEN }}
       continue-on-error: true
         
-    - name: Build Virtual Driver Control App
+    - name: Build Virtual Driver Control App (ARM64)
       run: |
         $controlAppPath = ""
         
@@ -111,31 +111,36 @@ jobs:
         }
         
         if ($controlAppPath -ne "") {
-          Write-Output "Building Virtual Driver Control App..."
+          Write-Output "Building Virtual Driver Control App for ARM64..."
           Push-Location $controlAppPath
           
           # Install dependencies
           Write-Output "Installing npm dependencies..."
           npm ci
           
-          # Build portable app
-          Write-Output "Building portable executable..."
+          # Modify package.json to build for ARM64
+          $packageJson = Get-Content "package.json" | ConvertFrom-Json
+          $packageJson.build.win.target[0].arch = @("arm64")
+          $packageJson | ConvertTo-Json -Depth 10 | Set-Content "package.json"
+          
+          # Build portable app for ARM64
+          Write-Output "Building portable executable for ARM64..."
           npm run build-portable
           
           Pop-Location
           
           # Copy built app to publish directory
-          $publishDir = "./control-app-publish"
+          $publishDir = "./control-app-publish-arm64"
           New-Item -ItemType Directory -Path $publishDir -Force
           
           # The portable build should be in dist folder
           $distPath = "$controlAppPath/dist"
           if (Test-Path $distPath) {
             Copy-Item "$distPath/*" -Destination $publishDir -Recurse -Force
-            Write-Output "✅ Virtual Driver Control App build completed"
+            Write-Output "✅ Virtual Driver Control App ARM64 build completed"
             
             # List contents for verification
-            Write-Output "Built files:"
+            Write-Output "Built ARM64 files:"
             Get-ChildItem $publishDir -Recurse | ForEach-Object { Write-Output "  - $($_.Name)" }
           } else {
             Write-Output "❌ Build output directory not found: $distPath"
@@ -167,9 +172,9 @@ jobs:
         }
         
         # Copy Control App files
-        if (Test-Path "control-app-publish") {
-          Copy-Item "control-app-publish\*" -Destination $controlDir -Recurse -Force
-          Write-Output "✅ Copied Control App files"
+        if (Test-Path "control-app-publish-arm64") {
+          Copy-Item "control-app-publish-arm64\*" -Destination $controlDir -Recurse -Force
+          Write-Output "✅ Copied Control App ARM64 files"
         }
         
         Write-Output "ARM64_PACKAGE_DIR=$packageDir" >> $env:GITHUB_ENV
@@ -270,13 +275,67 @@ jobs:
           exit 1
         }
       
-    # Download ARM64 artifacts to get Control App
-    - name: Download ARM64 components for Control App
-      uses: actions/download-artifact@v4
+    # Checkout Virtual Driver Control Repository for x64 build
+    - name: Checkout Virtual Driver Control Repository
+      if: github.repository != 'VirtualDrivers/Virtual-Driver-Control'
+      uses: actions/checkout@v4
       with:
-        name: ARM64-Components-${{ env.BUILD_CONFIGURATION }}
-        path: arm64-components-temp
-    
+        repository: 'VirtualDrivers/Virtual-Driver-Control'
+        path: 'control-app-repo-x64'
+        token: ${{ secrets.GITHUB_TOKEN }}
+      continue-on-error: true
+        
+    - name: Build Virtual Driver Control App (x64)
+      run: |
+        $controlAppPath = ""
+        
+        # Check if control app is in current repo (unlikely but check anyway)
+        if (Test-Path "VirtualDriverControl/package.json") {
+          $controlAppPath = "VirtualDriverControl"
+          Write-Output "Found control app in current repository"
+        } 
+        # Check if control app was checked out separately
+        elseif (Test-Path "control-app-repo-x64/VirtualDriverControl/package.json") {
+          $controlAppPath = "control-app-repo-x64/VirtualDriverControl"
+          Write-Output "Found control app in separate repository"
+        }
+        
+        if ($controlAppPath -ne "") {
+          Write-Output "Building Virtual Driver Control App for x64..."
+          Push-Location $controlAppPath
+          
+          # Install dependencies
+          Write-Output "Installing npm dependencies..."
+          npm ci
+          
+          # Build portable app for x64 (default configuration)
+          Write-Output "Building portable executable for x64..."
+          npm run build-portable
+          
+          Pop-Location
+          
+          # Copy built app to publish directory
+          $publishDir = "./control-app-publish-x64"
+          New-Item -ItemType Directory -Path $publishDir -Force
+          
+          # The portable build should be in dist folder
+          $distPath = "$controlAppPath/dist"
+          if (Test-Path $distPath) {
+            Copy-Item "$distPath/*" -Destination $publishDir -Recurse -Force
+            Write-Output "✅ Virtual Driver Control App x64 build completed"
+            
+            # List contents for verification
+            Write-Output "Built x64 files:"
+            Get-ChildItem $publishDir -Recurse | ForEach-Object { Write-Output "  - $($_.Name)" }
+          } else {
+            Write-Output "❌ Build output directory not found: $distPath"
+            exit 1
+          }
+        } else {
+          Write-Output "❌ Virtual Driver Control App package.json not found"
+          exit 1
+        }
+      
     # Package x64 components (VDD + VAD + Control App)
     - name: Package x64 components
       run: |
@@ -306,10 +365,10 @@ jobs:
         }
         Write-Output "✅ Copied VAD x64 files"
         
-        # Copy Control App files from ARM64 artifacts (platform-independent)
-        if (Test-Path "arm64-components-temp\ControlApp") {
-          Copy-Item "arm64-components-temp\ControlApp\*" -Destination $controlDir -Recurse -Force
-          Write-Output "✅ Copied Control App files to x64 package"
+        # Copy Control App files (x64 build)
+        if (Test-Path "control-app-publish-x64") {
+          Copy-Item "control-app-publish-x64\*" -Destination $controlDir -Recurse -Force
+          Write-Output "✅ Copied Control App x64 files to x64 package"
         }
         
         Write-Output "X64_PACKAGE_DIR=$packageDir" >> $env:GITHUB_ENV
@@ -512,9 +571,10 @@ jobs:
                 Write-Output "Built installer: $($_.Name) ($(($_.Length / 1MB).ToString('F2')) MB)"
               }
               
-              # Set environment variable for later upload
-              $installerFile = (Get-ChildItem "output\*.exe" | Select-Object -First 1).FullName
-              Write-Output "INSTALLER_PATH=$installerFile" >> $env:GITHUB_ENV
+              # Set environment variable for later upload (relative to workflow root)
+              $installerFile = (Get-ChildItem "output\*.exe" | Select-Object -First 1).Name
+              $installerPath = "installer-repo\output\$installerFile"
+              Write-Output "INSTALLER_PATH=$installerPath" >> $env:GITHUB_ENV
             } else {
               Write-Output "❌ No installer executable found in output directory"
               exit 1
