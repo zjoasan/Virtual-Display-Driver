@@ -564,6 +564,32 @@ jobs:
           if (Test-Path "build-installer.ps1") {
             .\build-installer.ps1
             
+            # Install Inno Setup if not available
+            if (-not (Get-Command "iscc" -ErrorAction SilentlyContinue)) {
+              Write-Output "Installing Inno Setup..."
+              choco install innosetup -y
+              if ($LASTEXITCODE -ne 0) {
+                Write-Output "Failed to install Inno Setup"
+                exit 1
+              }
+            }
+            
+            # Compile the installer using Inno Setup
+            Write-Output "Compiling installer with Inno Setup..."
+            $issFile = "Setup.iss"
+            if (Test-Path $issFile) {
+              iscc $issFile
+              if ($LASTEXITCODE -eq 0) {
+                Write-Output "✅ Inno Setup compilation completed"
+              } else {
+                Write-Output "❌ Inno Setup compilation failed with exit code: $LASTEXITCODE"
+                exit 1
+              }
+            } else {
+              Write-Output "❌ Setup.iss not found"
+              exit 1
+            }
+            
             # Check if installer was built successfully
             if (Test-Path "output\*.exe") {
               Write-Output "✅ Installer built successfully"
@@ -571,12 +597,14 @@ jobs:
                 Write-Output "Built installer: $($_.Name) ($(($_.Length / 1MB).ToString('F2')) MB)"
               }
               
-              # Set environment variable for later upload (relative to workflow root)
-              $installerFile = (Get-ChildItem "output\*.exe" | Select-Object -First 1).Name
-              $installerPath = "installer-repo\output\$installerFile"
-              Write-Output "INSTALLER_PATH=$installerPath" >> $env:GITHUB_ENV
+              # Get the actual installer file path for upload
+              $installerFile = Get-ChildItem "output\*.exe" | Select-Object -First 1
+              Write-Output "INSTALLER_NAME=$($installerFile.Name)" >> $env:GITHUB_ENV
             } else {
               Write-Output "❌ No installer executable found in output directory"
+              Get-ChildItem "output" -ErrorAction SilentlyContinue | ForEach-Object {
+                Write-Output "Found in output: $($_.Name)"
+              }
               exit 1
             }
           } else {
@@ -593,11 +621,11 @@ jobs:
       
     # Upload built installer
     - name: Upload Virtual Driver Installer
-      if: env.INSTALLER_PATH != ''
+      if: env.INSTALLER_NAME != ''
       uses: actions/upload-artifact@v4
       with:
         name: Virtual-Driver-Installer-${{ env.BUILD_CONFIGURATION }}-${{ env.RELEASE_TAG }}
-        path: ${{ env.INSTALLER_PATH }}
+        path: installer-repo/output/${{ env.INSTALLER_NAME }}
       continue-on-error: true
         
     # Build Summary
@@ -641,8 +669,8 @@ jobs:
         }
         Write-Output ""
         Write-Output "Installer Build Status:"
-        if ('${{ env.INSTALLER_PATH }}' -ne '') { 
-          Write-Output "✅ Virtual Driver Installer built successfully"
+        if ('${{ env.INSTALLER_NAME }}' -ne '') { 
+          Write-Output "✅ Virtual Driver Installer built successfully: ${{ env.INSTALLER_NAME }}"
         } else { 
           Write-Output "❌ Installer build failed or skipped"
         }
