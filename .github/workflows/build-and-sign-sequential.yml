@@ -539,9 +539,9 @@ jobs:
         token: ${{ secrets.GITHUB_TOKEN }}
       continue-on-error: true
       
-    # Build installer using signed components
+    # Build installer using existing artifacts in repo
     - name: Build Virtual Driver Installer
-      if: steps.signpath_unified_request.outcome == 'success' && github.event.inputs.build_installer != 'false'
+      if: github.event.inputs.build_installer != 'false'
       run: |
         Write-Output "Building Virtual Driver Installer..."
         
@@ -553,48 +553,47 @@ jobs:
         
         Push-Location $installerPath
         
-        # Copy signed artifacts to installer input directory
-        $signedArtifactsPath = "${{ vars.SIGNPATH_OUTPUT_DIR }}"
-        if (Test-Path $signedArtifactsPath) {
-          Write-Output "Copying signed artifacts to installer input..."
+        # Use existing artifacts from the repo (as mentioned by user)
+        Write-Output "Using existing artifacts from installer repository..."
+        
+        # Install Inno Setup
+        Write-Output "Installing Inno Setup..."
+        choco install innosetup -y
+        if ($LASTEXITCODE -ne 0) {
+          Write-Output "Failed to install Inno Setup"
+          exit 1
+        }
+        
+        # Update version in Setup.iss
+        if (Test-Path "Setup.iss") {
+          Write-Output "Updating version in Setup.iss..."
+          $releaseTag = "${{ env.RELEASE_TAG }}"
+          if ([string]::IsNullOrEmpty($releaseTag)) {
+            $releaseTag = (Get-Date).ToString('yy.MM.dd')
+          }
           
-          # Create SignedArtifacts directory structure expected by build script
-          New-Item -ItemType Directory -Path "SignedArtifacts" -Force
-          Copy-Item "$signedArtifactsPath\*" -Destination "SignedArtifacts\" -Recurse -Force
+          # Read and update Setup.iss
+          $setupContent = Get-Content "Setup.iss"
+          $setupContent = $setupContent -replace '#define MyAppVersion ".*"', "#define MyAppVersion `"$releaseTag`""
+          $setupContent = $setupContent -replace 'OutputBaseFilename=.*', "OutputBaseFilename=Virtual-Driver-Control-v$releaseTag-setup-x64"
+          $setupContent | Set-Content "Setup.iss"
           
-          Write-Output "Contents of SignedArtifacts directory:"
-          Get-ChildItem "SignedArtifacts" -Recurse | ForEach-Object { Write-Output "  - $($_.FullName)" }
-          
-          # Run the installer build script
-          Write-Output "Running installer build script..."
-          if (Test-Path "build-installer.ps1") {
-            .\build-installer.ps1
-            
-            # Install Inno Setup if not available
-            if (-not (Get-Command "iscc" -ErrorAction SilentlyContinue)) {
-              Write-Output "Installing Inno Setup..."
-              choco install innosetup -y
-              if ($LASTEXITCODE -ne 0) {
-                Write-Output "Failed to install Inno Setup"
-                exit 1
-              }
-            }
-            
-            # Compile the installer using Inno Setup
-            Write-Output "Compiling installer with Inno Setup..."
-            $issFile = "Setup.iss"
-            if (Test-Path $issFile) {
-              iscc $issFile
-              if ($LASTEXITCODE -eq 0) {
-                Write-Output "✅ Inno Setup compilation completed"
-              } else {
-                Write-Output "❌ Inno Setup compilation failed with exit code: $LASTEXITCODE"
-                exit 1
-              }
-            } else {
-              Write-Output "❌ Setup.iss not found"
-              exit 1
-            }
+          Write-Output "Updated version to: $releaseTag"
+        }
+        
+        # Run the installer build script if it exists
+        if (Test-Path "build-installer.ps1") {
+          Write-Output "Running installer preparation script..."
+          .\build-installer.ps1
+        }
+        
+        # Compile the installer using Inno Setup
+        Write-Output "Compiling installer with Inno Setup..."
+        $issFile = "Setup.iss"
+        if (Test-Path $issFile) {
+          iscc $issFile
+          if ($LASTEXITCODE -eq 0) {
+            Write-Output "✅ Inno Setup compilation completed"
             
             # Check if installer was built successfully
             if (Test-Path "output\*.exe") {
@@ -603,36 +602,37 @@ jobs:
                 Write-Output "Built installer: $($_.Name) ($(($_.Length / 1MB).ToString('F2')) MB)"
               }
               
-              # Get the actual installer file path for upload
+              # Get the actual installer file for upload
               $installerFile = Get-ChildItem "output\*.exe" | Select-Object -First 1
               Write-Output "INSTALLER_NAME=$($installerFile.Name)" >> $env:GITHUB_ENV
+              Write-Output "INSTALLER_SUCCESS=true" >> $env:GITHUB_ENV
             } else {
               Write-Output "❌ No installer executable found in output directory"
               Get-ChildItem "output" -ErrorAction SilentlyContinue | ForEach-Object {
                 Write-Output "Found in output: $($_.Name)"
               }
-              exit 1
+              Write-Output "INSTALLER_SUCCESS=false" >> $env:GITHUB_ENV
             }
           } else {
-            Write-Output "❌ build-installer.ps1 not found"
-            exit 1
+            Write-Output "❌ Inno Setup compilation failed with exit code: $LASTEXITCODE"
+            Write-Output "INSTALLER_SUCCESS=false" >> $env:GITHUB_ENV
           }
         } else {
-          Write-Output "❌ Signed artifacts not found at: $signedArtifactsPath"
-          exit 1
+          Write-Output "❌ Setup.iss not found"
+          Write-Output "INSTALLER_SUCCESS=false" >> $env:GITHUB_ENV
         }
         
         Pop-Location
-      continue-on-error: true
       
     # Upload built installer
     - name: Upload Virtual Driver Installer
-      if: env.INSTALLER_NAME != ''
+      if: env.INSTALLER_SUCCESS == 'true'
       uses: actions/upload-artifact@v4
       with:
         name: Virtual-Driver-Installer-${{ env.BUILD_CONFIGURATION }}-${{ env.RELEASE_TAG }}
-        path: installer-repo/output/${{ env.INSTALLER_NAME }}
-      continue-on-error: true
+        path: installer-repo/output/
+        retention-days: 30
+      continue-on-error: false
         
     # Build Summary
     - name: Build and SignPath Summary
@@ -675,10 +675,13 @@ jobs:
         }
         Write-Output ""
         Write-Output "Installer Build Status:"
-        if ('${{ env.INSTALLER_NAME }}' -ne '') { 
+        if ('${{ env.INSTALLER_SUCCESS }}' -eq 'true') { 
           Write-Output "✅ Virtual Driver Installer built successfully: ${{ env.INSTALLER_NAME }}"
+          Write-Output "   Uploaded to artifacts: Virtual-Driver-Installer-${{ env.BUILD_CONFIGURATION }}-${{ env.RELEASE_TAG }}"
+        } elseif ('${{ github.event.inputs.build_installer }}' -eq 'false') {
+          Write-Output "⏭️  Installer build skipped (disabled via input)"
         } else { 
-          Write-Output "❌ Installer build failed or skipped"
+          Write-Output "❌ Installer build failed or was not attempted"
         }
         Write-Output ""
         Write-Output "⚠️  Note: ARM64 VAD skipped due to Windows Driver Kit cross-compilation issues"
