@@ -1,11 +1,27 @@
-name: Build and Sign Virtual Drivers - Sequential (Fixed)
+name: Build and Sign Virtual Drivers - Full Production
 
 on:
   push:
     branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.github/workflows/ci-validation.yml'
+      - '.github/workflows/build-installer.yml'
   workflow_dispatch:
+    inputs:
+      skip_signing:
+        description: 'Skip SignPath signing (for testing)'
+        required: false
+        default: false
+        type: boolean
+      build_installer:
+        description: 'Build installer after signing'
+        required: false
+        default: true
+        type: boolean
+  release:
+    types: [created]
   schedule:
     - cron: '0 2 * * 0'  # Weekly builds
 
@@ -13,7 +29,111 @@ env:
   BUILD_CONFIGURATION: Release
 
 jobs:
-  # Job 1: Build ARM64 VDD and Control Panel only (skip VAD due to WDK ARM64 issues)
+  # Job 1: Build Control Apps for both architectures - runs independently and concurrently
+  build-control-apps:
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        
+    # Checkout Virtual Driver Control Repository
+    - name: Checkout Virtual Driver Control Repository
+      if: github.repository != 'VirtualDrivers/Virtual-Driver-Control'
+      uses: actions/checkout@v4
+      with:
+        repository: 'VirtualDrivers/Virtual-Driver-Control'
+        path: 'control-app-repo'
+        token: ${{ secrets.GITHUB_TOKEN }}
+      continue-on-error: true
+        
+    # Build Control App for ARM64
+    - name: Build Virtual Driver Control App (ARM64)
+      run: |
+        $controlAppPath = ""
+        
+        if (Test-Path "control-app-repo/VirtualDriverControl/package.json") {
+          $controlAppPath = "control-app-repo/VirtualDriverControl"
+          Write-Output "Found control app in separate repository"
+        }
+        
+        if ($controlAppPath -ne "") {
+          Write-Output "Building Virtual Driver Control App for ARM64..."
+          
+          # Create separate directory for ARM64 build
+          $arm64BuildPath = "control-app-arm64"
+          Copy-Item $controlAppPath -Destination $arm64BuildPath -Recurse -Force
+          Push-Location $arm64BuildPath
+          
+          # Install dependencies
+          npm ci
+          
+          # Modify package.json for ARM64
+          $packageJson = Get-Content "package.json" | ConvertFrom-Json
+          $packageJson.build.win.target[0].arch = @("arm64")
+          $packageJson | ConvertTo-Json -Depth 10 | Set-Content "package.json"
+          
+          # Build portable app for ARM64
+          npm run build-portable
+          
+          Pop-Location
+          
+          # Copy to publish directory
+          $publishDir = "./control-app-publish-arm64"
+          New-Item -ItemType Directory -Path $publishDir -Force
+          Copy-Item "$arm64BuildPath/dist/*" -Destination $publishDir -Recurse -Force
+          Write-Output "✅ ARM64 Control App build completed"
+        }
+        
+    # Build Control App for x64 (in parallel with ARM64)
+    - name: Build Virtual Driver Control App (x64)
+      run: |
+        $controlAppPath = ""
+        
+        if (Test-Path "control-app-repo/VirtualDriverControl/package.json") {
+          $controlAppPath = "control-app-repo/VirtualDriverControl"
+          Write-Output "Found control app in separate repository"
+        }
+        
+        if ($controlAppPath -ne "") {
+          Write-Output "Building Virtual Driver Control App for x64..."
+          
+          # Create separate directory for x64 build
+          $x64BuildPath = "control-app-x64"
+          Copy-Item $controlAppPath -Destination $x64BuildPath -Recurse -Force
+          Push-Location $x64BuildPath
+          
+          # Install dependencies
+          npm ci
+          
+          # Build portable app for x64 (default config)
+          npm run build-portable
+          
+          Pop-Location
+          
+          # Copy to publish directory
+          $publishDir = "./control-app-publish-x64"
+          New-Item -ItemType Directory -Path $publishDir -Force
+          Copy-Item "$x64BuildPath/dist/*" -Destination $publishDir -Recurse -Force
+          Write-Output "✅ x64 Control App build completed"
+        }
+    
+    # Upload Control Apps as artifacts
+    - name: Upload Control Apps
+      uses: actions/upload-artifact@v4
+      with:
+        name: Control-Apps-${{ env.BUILD_CONFIGURATION }}
+        path: |
+          control-app-publish-arm64/
+          control-app-publish-x64/
+        retention-days: 1
+
+  # Job 2: Build ARM64 VDD only (skip VAD due to WDK ARM64 issues) - runs concurrently with x64 and control apps
   build-arm64:
     runs-on: windows-latest
     
@@ -85,72 +205,13 @@ jobs:
         Write-Output "ℹ️  Skipping ARM64 VAD build due to Windows Driver Kit ARM64 cross-compilation issues"
         Write-Output "ℹ️  VAD will be built for x64 only in the next job"
       
-    # Build Electron Control App (platform-independent, only build once)
-    - name: Checkout Virtual Driver Control Repository
-      if: github.repository != 'VirtualDrivers/Virtual-Driver-Control'
-      uses: actions/checkout@v4
+    # Download Control Apps
+    - name: Download Control Apps
+      uses: actions/download-artifact@v4
       with:
-        repository: 'VirtualDrivers/Virtual-Driver-Control'
-        path: 'control-app-repo'
-        token: ${{ secrets.GITHUB_TOKEN }}
-      continue-on-error: true
-        
-    - name: Build Virtual Driver Control App (ARM64)
-      run: |
-        $controlAppPath = ""
-        
-        # Check if control app is in current repo (unlikely but check anyway)
-        if (Test-Path "VirtualDriverControl/package.json") {
-          $controlAppPath = "VirtualDriverControl"
-          Write-Output "Found control app in current repository"
-        } 
-        # Check if control app was checked out separately
-        elseif (Test-Path "control-app-repo/VirtualDriverControl/package.json") {
-          $controlAppPath = "control-app-repo/VirtualDriverControl"
-          Write-Output "Found control app in separate repository"
-        }
-        
-        if ($controlAppPath -ne "") {
-          Write-Output "Building Virtual Driver Control App for ARM64..."
-          Push-Location $controlAppPath
-          
-          # Install dependencies
-          Write-Output "Installing npm dependencies..."
-          npm ci
-          
-          # Modify package.json to build for ARM64
-          $packageJson = Get-Content "package.json" | ConvertFrom-Json
-          $packageJson.build.win.target[0].arch = @("arm64")
-          $packageJson | ConvertTo-Json -Depth 10 | Set-Content "package.json"
-          
-          # Build portable app for ARM64
-          Write-Output "Building portable executable for ARM64..."
-          npm run build-portable
-          
-          Pop-Location
-          
-          # Copy built app to publish directory
-          $publishDir = "./control-app-publish-arm64"
-          New-Item -ItemType Directory -Path $publishDir -Force
-          
-          # The portable build should be in dist folder
-          $distPath = "$controlAppPath/dist"
-          if (Test-Path $distPath) {
-            Copy-Item "$distPath/*" -Destination $publishDir -Recurse -Force
-            Write-Output "✅ Virtual Driver Control App ARM64 build completed"
-            
-            # List contents for verification
-            Write-Output "Built ARM64 files:"
-            Get-ChildItem $publishDir -Recurse | ForEach-Object { Write-Output "  - $($_.Name)" }
-          } else {
-            Write-Output "❌ Build output directory not found: $distPath"
-            exit 1
-          }
-        } else {
-          Write-Output "❌ Virtual Driver Control App package.json not found"
-          exit 1
-        }
-      
+        name: Control-Apps-${{ env.BUILD_CONFIGURATION }}
+        path: control-apps
+
     # Package ARM64 components (VDD + Control App only)
     - name: Package ARM64 components
       run: |
@@ -171,9 +232,9 @@ jobs:
           Write-Output "✅ Copied VDD ARM64 files"
         }
         
-        # Copy Control App files
-        if (Test-Path "control-app-publish-arm64") {
-          Copy-Item "control-app-publish-arm64\*" -Destination $controlDir -Recurse -Force
+        # Copy Control App ARM64 files from downloaded artifacts
+        if (Test-Path "control-apps\control-app-publish-arm64") {
+          Copy-Item "control-apps\control-app-publish-arm64\*" -Destination $controlDir -Recurse -Force
           Write-Output "✅ Copied Control App ARM64 files"
         }
         
@@ -187,9 +248,8 @@ jobs:
         path: ${{ env.ARM64_PACKAGE_DIR }}
         retention-days: 1
 
-  # Job 2: Build x64 components (VDD + VAD) - depends on ARM64 completion
+  # Job 2: Build x64 components (VDD + VAD + Control App) - runs concurrently with ARM64
   build-x64:
-    needs: build-arm64
     runs-on: windows-latest
     
     steps:
@@ -275,66 +335,12 @@ jobs:
           exit 1
         }
       
-    # Checkout Virtual Driver Control Repository for x64 build
-    - name: Checkout Virtual Driver Control Repository
-      if: github.repository != 'VirtualDrivers/Virtual-Driver-Control'
-      uses: actions/checkout@v4
+    # Download Control Apps
+    - name: Download Control Apps
+      uses: actions/download-artifact@v4
       with:
-        repository: 'VirtualDrivers/Virtual-Driver-Control'
-        path: 'control-app-repo-x64'
-        token: ${{ secrets.GITHUB_TOKEN }}
-      continue-on-error: true
-        
-    - name: Build Virtual Driver Control App (x64)
-      run: |
-        $controlAppPath = ""
-        
-        # Check if control app is in current repo (unlikely but check anyway)
-        if (Test-Path "VirtualDriverControl/package.json") {
-          $controlAppPath = "VirtualDriverControl"
-          Write-Output "Found control app in current repository"
-        } 
-        # Check if control app was checked out separately
-        elseif (Test-Path "control-app-repo-x64/VirtualDriverControl/package.json") {
-          $controlAppPath = "control-app-repo-x64/VirtualDriverControl"
-          Write-Output "Found control app in separate repository"
-        }
-        
-        if ($controlAppPath -ne "") {
-          Write-Output "Building Virtual Driver Control App for x64..."
-          Push-Location $controlAppPath
-          
-          # Install dependencies
-          Write-Output "Installing npm dependencies..."
-          npm ci
-          
-          # Build portable app for x64 (default configuration)
-          Write-Output "Building portable executable for x64..."
-          npm run build-portable
-          
-          Pop-Location
-          
-          # Copy built app to publish directory
-          $publishDir = "./control-app-publish-x64"
-          New-Item -ItemType Directory -Path $publishDir -Force
-          
-          # The portable build should be in dist folder
-          $distPath = "$controlAppPath/dist"
-          if (Test-Path $distPath) {
-            Copy-Item "$distPath/*" -Destination $publishDir -Recurse -Force
-            Write-Output "✅ Virtual Driver Control App x64 build completed"
-            
-            # List contents for verification
-            Write-Output "Built x64 files:"
-            Get-ChildItem $publishDir -Recurse | ForEach-Object { Write-Output "  - $($_.Name)" }
-          } else {
-            Write-Output "❌ Build output directory not found: $distPath"
-            exit 1
-          }
-        } else {
-          Write-Output "❌ Virtual Driver Control App package.json not found"
-          exit 1
-        }
+        name: Control-Apps-${{ env.BUILD_CONFIGURATION }}
+        path: control-apps
       
     # Package x64 components (VDD + VAD + Control App)
     - name: Package x64 components
@@ -365,9 +371,9 @@ jobs:
         }
         Write-Output "✅ Copied VAD x64 files"
         
-        # Copy Control App files (x64 build)
-        if (Test-Path "control-app-publish-x64") {
-          Copy-Item "control-app-publish-x64\*" -Destination $controlDir -Recurse -Force
+        # Copy Control App x64 files from downloaded artifacts
+        if (Test-Path "control-apps\control-app-publish-x64") {
+          Copy-Item "control-apps\control-app-publish-x64\*" -Destination $controlDir -Recurse -Force
           Write-Output "✅ Copied Control App x64 files to x64 package"
         }
         
@@ -381,9 +387,9 @@ jobs:
         path: ${{ env.X64_PACKAGE_DIR }}
         retention-days: 1
 
-  # Job 3: Unified packaging and signing (depends on both builds)
+  # Job 4: Unified packaging and signing - waits for all concurrent builds
   package-and-sign:
-    needs: [build-arm64, build-x64]
+    needs: [build-control-apps, build-arm64, build-x64]
     runs-on: windows-latest
     
     steps:
@@ -496,9 +502,9 @@ jobs:
         Write-Output "Generated release tag: $releaseTag"
         echo "RELEASE_TAG=$releaseTag" >> $env:GITHUB_ENV
         
-    # Submit unified package to SignPath (only for main branch and tags)
+    # Submit unified package to SignPath (only for main branch and tags, unless skipping)
     - name: Submit unified package to SignPath for signing
-      if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/')) && steps.upload_unified_package.outputs.artifact-id != ''
+      if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/')) && steps.upload_unified_package.outputs.artifact-id != '' && github.event.inputs.skip_signing != 'true'
       id: signpath_unified_request
       uses: signpath/github-action-submit-signing-request@v1
       with:
@@ -535,7 +541,7 @@ jobs:
       
     # Build installer using signed components
     - name: Build Virtual Driver Installer
-      if: steps.signpath_unified_request.outcome == 'success'
+      if: steps.signpath_unified_request.outcome == 'success' && github.event.inputs.build_installer != 'false'
       run: |
         Write-Output "Building Virtual Driver Installer..."
         
@@ -632,29 +638,29 @@ jobs:
     - name: Build and SignPath Summary
       if: always()
       run: |
-        Write-Output "=== Virtual Drivers Sequential Build & Sign Summary (Fixed) ==="
+        Write-Output "=== Virtual Drivers Concurrent Build & Sign Summary ==="
         Write-Output "Configuration: $env:BUILD_CONFIGURATION"
         Write-Output "Release Tag: ${{ env.RELEASE_TAG }}"
         Write-Output "Commit: ${{ github.sha }}"
         Write-Output "Branch/Tag: ${{ github.ref }}"
         Write-Output ""
-        Write-Output "Build Strategy: Sequential with Mixed Platform Support"
+        Write-Output "Build Strategy: Concurrent with Mixed Platform Support"
         Write-Output ""
         Write-Output "Platform-Specific Components Built:"
         Write-Output "ARM64: VDD + Control App (VAD skipped due to WDK limitations)"
         Write-Output "x64:   VDD + VAD + Control App"
         Write-Output ""
         Write-Output "This workflow successfully:"
-        Write-Output "✅ Built ARM64 VDD and Electron Control App first"
-        Write-Output "✅ Built x64 drivers after ARM64 completion (VDD + VAD)"
+        Write-Output "✅ Built ARM64 VDD and Electron Control App concurrently"
+        Write-Output "✅ Built x64 drivers concurrently with ARM64 (VDD + VAD + Control App)"
         Write-Output "✅ Created unified package containing all working components"
         Write-Output "✅ Submitted single unified package to SignPath for code signing"
         Write-Output "✅ Built installer using signed components"
         Write-Output "✅ Generated automatic release tags for version tracking"
         Write-Output ""
         Write-Output "Benefits of This Approach:"
-        Write-Output "• Resource efficiency - sequential builds prevent resource conflicts"
-        Write-Output "• Error isolation - ARM64 failure stops x64 build"
+        Write-Output "• Time efficiency - concurrent builds reduce total build time"
+        Write-Output "• Resource optimization - parallel execution on separate runners"
         Write-Output "• Single SignPath submission for all platforms"
         Write-Output "• Works around WDK ARM64 cross-compilation limitations"
         Write-Output "• VAD still available for primary x64 platform"
