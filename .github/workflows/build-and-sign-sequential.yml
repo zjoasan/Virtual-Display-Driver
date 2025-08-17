@@ -425,7 +425,6 @@ jobs:
         
     # Upload ZIP for SignPath
     - name: Upload ZIP for SignPath
-      if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/')) && github.event.inputs.skip_signing != 'true'
       id: upload_for_signpath
       uses: actions/upload-artifact@v4
       with:
@@ -435,7 +434,7 @@ jobs:
         
     # STEP 8: Submit to SignPath
     - name: "Step 8: Submit to SignPath"
-      if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/')) && github.event.inputs.skip_signing != 'true' && steps.upload_for_signpath.outputs.artifact-id != ''
+      if: github.event.inputs.skip_signing != 'true' && steps.upload_for_signpath.outputs.artifact-id != ''
       id: signpath_request
       uses: signpath/github-action-submit-signing-request@v1
       with:
@@ -479,7 +478,7 @@ jobs:
         Write-Output "5️⃣ Control App (x64 + ARM64) ✅"
         Write-Output "6️⃣ Installer ✅"
         Write-Output "7️⃣ ZIP Package ✅"
-        Write-Output "8️⃣ SignPath Submission $(if ('${{ steps.signpath_request.outcome }}' -eq 'success') { '✅' } elseif ('${{ github.event.inputs.skip_signing }}' -eq 'true') { '⏭️ (skipped)' } else { '❌' })"
+        Write-Output "8️⃣ SignPath Submission $(if ('${{ steps.signpath_request.outcome }}' -eq 'success') { '✅' } elseif ('${{ github.event.inputs.skip_signing }}' -eq 'true') { '⏭️ (skipped by input)' } elseif ('${{ steps.upload_for_signpath.outputs.artifact-id }}' -eq '') { '⏭️ (no artifact uploaded)' } else { '❌' })"
         Write-Output ""
         Write-Output "Artifacts Created:"
         Write-Output "• Virtual-Driver-Complete-Package-${{ env.RELEASE_TAG }}"
