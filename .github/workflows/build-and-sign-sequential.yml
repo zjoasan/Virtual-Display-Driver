@@ -44,6 +44,13 @@ jobs:
       with:
         dotnet-version: '6.0.x'
         
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: '**/package-lock.json'
+        
     # Build Virtual Display Driver for ARM64
     - name: Build Virtual Display Driver (ARM64)
       run: |
@@ -80,45 +87,68 @@ jobs:
         Write-Output "ℹ️  Skipping ARM64 VAD build due to Windows Driver Kit ARM64 cross-compilation issues"
         Write-Output "ℹ️  VAD will be built for x64 only in the next job"
       
-    # Build Control Panel (platform-independent, only build once)
-    - name: Checkout Control Panel Repository
+    # Build Electron Control App (platform-independent, only build once)
+    - name: Checkout Virtual Driver Control Repository
       if: github.repository != 'VirtualDrivers/Virtual-Driver-Control'
       uses: actions/checkout@v4
       with:
         repository: 'VirtualDrivers/Virtual-Driver-Control'
-        path: 'control-panel-repo'
+        path: 'control-app-repo'
         token: ${{ secrets.GITHUB_TOKEN }}
       continue-on-error: true
         
-    - name: Build Control Panel
+    - name: Build Virtual Driver Control App
       run: |
-        $controlPanelPath = ""
+        $controlAppPath = ""
         
-        # Check if control panel is in current repo
-        if (Test-Path "VDD Control/VDD Control.sln") {
-          $controlPanelPath = "VDD Control/VDD Control.sln"
-          $projectPath = "VDD Control/VDD Control/VDD Control.csproj"
-          Write-Output "Found control panel in current repository"
+        # Check if control app is in current repo (unlikely but check anyway)
+        if (Test-Path "VirtualDriverControl/package.json") {
+          $controlAppPath = "VirtualDriverControl"
+          Write-Output "Found control app in current repository"
         } 
-        # Check if control panel was checked out separately
-        elseif (Test-Path "control-panel-repo/VDD Control/VDD Control.sln") {
-          $controlPanelPath = "control-panel-repo/VDD Control/VDD Control.sln"
-          $projectPath = "control-panel-repo/VDD Control/VDD Control/VDD Control.csproj"
-          Write-Output "Found control panel in separate repository"
+        # Check if control app was checked out separately
+        elseif (Test-Path "control-app-repo/VirtualDriverControl/package.json") {
+          $controlAppPath = "control-app-repo/VirtualDriverControl"
+          Write-Output "Found control app in separate repository"
         }
         
-        if ($controlPanelPath -ne "") {
-          Write-Output "Building Control Panel..."
-          dotnet restore $controlPanelPath
-          dotnet build $controlPanelPath --configuration $env:BUILD_CONFIGURATION --no-restore
-          dotnet publish $projectPath --configuration $env:BUILD_CONFIGURATION --output ./control-panel-publish --no-build
-          Write-Output "✅ Control Panel build completed"
+        if ($controlAppPath -ne "") {
+          Write-Output "Building Virtual Driver Control App..."
+          Push-Location $controlAppPath
+          
+          # Install dependencies
+          Write-Output "Installing npm dependencies..."
+          npm ci
+          
+          # Build portable app
+          Write-Output "Building portable executable..."
+          npm run build-portable
+          
+          Pop-Location
+          
+          # Copy built app to publish directory
+          $publishDir = "./control-app-publish"
+          New-Item -ItemType Directory -Path $publishDir -Force
+          
+          # The portable build should be in dist folder
+          $distPath = "$controlAppPath/dist"
+          if (Test-Path $distPath) {
+            Copy-Item "$distPath/*" -Destination $publishDir -Recurse -Force
+            Write-Output "✅ Virtual Driver Control App build completed"
+            
+            # List contents for verification
+            Write-Output "Built files:"
+            Get-ChildItem $publishDir -Recurse | ForEach-Object { Write-Output "  - $($_.Name)" }
+          } else {
+            Write-Output "❌ Build output directory not found: $distPath"
+            exit 1
+          }
         } else {
-          Write-Output "❌ Control Panel solution file not found"
+          Write-Output "❌ Virtual Driver Control App package.json not found"
           exit 1
         }
       
-    # Package ARM64 components (VDD + Control Panel only)
+    # Package ARM64 components (VDD + Control App only)
     - name: Package ARM64 components
       run: |
         Write-Output "Creating ARM64 package..."
@@ -127,7 +157,7 @@ jobs:
         
         # Create component directories
         $vddDir = "$packageDir\VDD"
-        $controlDir = "$packageDir\ControlPanel"
+        $controlDir = "$packageDir\ControlApp"
         New-Item -ItemType Directory -Path $vddDir -Force
         New-Item -ItemType Directory -Path $controlDir -Force
         
@@ -138,10 +168,10 @@ jobs:
           Write-Output "✅ Copied VDD ARM64 files"
         }
         
-        # Copy Control Panel files
-        if (Test-Path "control-panel-publish") {
-          Copy-Item "control-panel-publish\*" -Destination $controlDir -Recurse -Force
-          Write-Output "✅ Copied Control Panel files"
+        # Copy Control App files
+        if (Test-Path "control-app-publish") {
+          Copy-Item "control-app-publish\*" -Destination $controlDir -Recurse -Force
+          Write-Output "✅ Copied Control App files"
         }
         
         Write-Output "ARM64_PACKAGE_DIR=$packageDir" >> $env:GITHUB_ENV
@@ -180,6 +210,13 @@ jobs:
         
         choco install windowsdriverkit11 -y
         if ($LASTEXITCODE -ne 0) { exit 1 }
+        
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: '**/package-lock.json'
         
     # Build Virtual Display Driver for x64
     - name: Build Virtual Display Driver (x64)
@@ -237,7 +274,14 @@ jobs:
           exit 1
         }
       
-    # Package x64 components (VDD + VAD)
+    # Download ARM64 artifacts to get Control App
+    - name: Download ARM64 components for Control App
+      uses: actions/download-artifact@v4
+      with:
+        name: ARM64-Components-${{ env.BUILD_CONFIGURATION }}
+        path: arm64-components-temp
+    
+    # Package x64 components (VDD + VAD + Control App)
     - name: Package x64 components
       run: |
         Write-Output "Creating x64 package..."
@@ -247,8 +291,10 @@ jobs:
         # Create component directories
         $vddDir = "$packageDir\VDD"
         $vadDir = "$packageDir\VAD"
+        $controlDir = "$packageDir\ControlApp"
         New-Item -ItemType Directory -Path $vddDir -Force
         New-Item -ItemType Directory -Path $vadDir -Force
+        New-Item -ItemType Directory -Path $controlDir -Force
         
         # Copy VDD x64 files
         $vddBuildDir = "Virtual Display Driver (HDR)\x64\$env:BUILD_CONFIGURATION\MttVDD"
@@ -263,6 +309,12 @@ jobs:
           Copy-Item $file.FullName -Destination $vadDir -Force
         }
         Write-Output "✅ Copied VAD x64 files"
+        
+        # Copy Control App files from ARM64 artifacts (platform-independent)
+        if (Test-Path "arm64-components-temp\ControlApp") {
+          Copy-Item "arm64-components-temp\ControlApp\*" -Destination $controlDir -Recurse -Force
+          Write-Output "✅ Copied Control App files to x64 package"
+        }
         
         Write-Output "X64_PACKAGE_DIR=$packageDir" >> $env:GITHUB_ENV
       
@@ -311,23 +363,23 @@ jobs:
         New-Item -ItemType Directory -Path $x64Dir -Force
         
         # Create component subdirectories
-        # ARM64: VDD + Control Panel only
+        # ARM64: VDD + Control App only
         New-Item -ItemType Directory -Path "$arm64Dir\VDD" -Force
-        New-Item -ItemType Directory -Path "$arm64Dir\ControlPanel" -Force
+        New-Item -ItemType Directory -Path "$arm64Dir\ControlApp" -Force
         
-        # x64: VDD + VAD + Control Panel
+        # x64: VDD + VAD + Control App
         New-Item -ItemType Directory -Path "$x64Dir\VDD" -Force
         New-Item -ItemType Directory -Path "$x64Dir\VAD" -Force
-        New-Item -ItemType Directory -Path "$x64Dir\ControlPanel" -Force
+        New-Item -ItemType Directory -Path "$x64Dir\ControlApp" -Force
         
-        # Copy ARM64 components (VDD + Control Panel)
+        # Copy ARM64 components (VDD + Control App)
         if (Test-Path "arm64-components\VDD") {
           Copy-Item "arm64-components\VDD\*" -Destination "$arm64Dir\VDD" -Force
           Write-Output "✅ Copied ARM64 VDD files"
         }
-        if (Test-Path "arm64-components\ControlPanel") {
-          Copy-Item "arm64-components\ControlPanel\*" -Destination "$arm64Dir\ControlPanel" -Recurse -Force
-          Write-Output "✅ Copied Control Panel files to ARM64 package"
+        if (Test-Path "arm64-components\ControlApp") {
+          Copy-Item "arm64-components\ControlApp\*" -Destination "$arm64Dir\ControlApp" -Recurse -Force
+          Write-Output "✅ Copied Control App files to ARM64 package"
         }
         
         # Copy x64 components (VDD + VAD)
@@ -340,10 +392,10 @@ jobs:
           Write-Output "✅ Copied x64 VAD files"
         }
         
-        # Copy Control Panel to x64 as well (shared component)
-        if (Test-Path "arm64-components\ControlPanel") {
-          Copy-Item "arm64-components\ControlPanel\*" -Destination "$x64Dir\ControlPanel" -Recurse -Force
-          Write-Output "✅ Copied Control Panel files to x64 package"
+        # Copy Control App to x64 as well (shared component)
+        if (Test-Path "x64-components\ControlApp") {
+          Copy-Item "x64-components\ControlApp\*" -Destination "$x64Dir\ControlApp" -Recurse -Force
+          Write-Output "✅ Copied Control App files to x64 package"
         }
         
         # Display final package structure
@@ -416,6 +468,81 @@ jobs:
         name: Signed-Unified-Package-Mixed-Platform-${{ env.BUILD_CONFIGURATION }}
         path: '${{ vars.SIGNPATH_OUTPUT_DIR }}\*'
       continue-on-error: true
+      
+    # Checkout Virtual Driver Installer Repository
+    - name: Checkout Virtual Driver Installer Repository
+      uses: actions/checkout@v4
+      with:
+        repository: 'VirtualDrivers/Virtual-Driver-Installer'
+        path: 'installer-repo'
+        token: ${{ secrets.GITHUB_TOKEN }}
+      continue-on-error: true
+      
+    # Build installer using signed components
+    - name: Build Virtual Driver Installer
+      if: steps.signpath_unified_request.outcome == 'success'
+      run: |
+        Write-Output "Building Virtual Driver Installer..."
+        
+        $installerPath = "installer-repo"
+        if (-not (Test-Path $installerPath)) {
+          Write-Output "❌ Installer repository not found"
+          exit 1
+        }
+        
+        Push-Location $installerPath
+        
+        # Copy signed artifacts to installer input directory
+        $signedArtifactsPath = "${{ vars.SIGNPATH_OUTPUT_DIR }}"
+        if (Test-Path $signedArtifactsPath) {
+          Write-Output "Copying signed artifacts to installer input..."
+          
+          # Create SignedArtifacts directory structure expected by build script
+          New-Item -ItemType Directory -Path "SignedArtifacts" -Force
+          Copy-Item "$signedArtifactsPath\*" -Destination "SignedArtifacts\" -Recurse -Force
+          
+          Write-Output "Contents of SignedArtifacts directory:"
+          Get-ChildItem "SignedArtifacts" -Recurse | ForEach-Object { Write-Output "  - $($_.FullName)" }
+          
+          # Run the installer build script
+          Write-Output "Running installer build script..."
+          if (Test-Path "build-installer.ps1") {
+            .\build-installer.ps1
+            
+            # Check if installer was built successfully
+            if (Test-Path "output\*.exe") {
+              Write-Output "✅ Installer built successfully"
+              Get-ChildItem "output\*.exe" | ForEach-Object {
+                Write-Output "Built installer: $($_.Name) ($(($_.Length / 1MB).ToString('F2')) MB)"
+              }
+              
+              # Set environment variable for later upload
+              $installerFile = (Get-ChildItem "output\*.exe" | Select-Object -First 1).FullName
+              Write-Output "INSTALLER_PATH=$installerFile" >> $env:GITHUB_ENV
+            } else {
+              Write-Output "❌ No installer executable found in output directory"
+              exit 1
+            }
+          } else {
+            Write-Output "❌ build-installer.ps1 not found"
+            exit 1
+          }
+        } else {
+          Write-Output "❌ Signed artifacts not found at: $signedArtifactsPath"
+          exit 1
+        }
+        
+        Pop-Location
+      continue-on-error: true
+      
+    # Upload built installer
+    - name: Upload Virtual Driver Installer
+      if: env.INSTALLER_PATH != ''
+      uses: actions/upload-artifact@v4
+      with:
+        name: Virtual-Driver-Installer-${{ env.BUILD_CONFIGURATION }}-${{ env.RELEASE_TAG }}
+        path: ${{ env.INSTALLER_PATH }}
+      continue-on-error: true
         
     # Build Summary
     - name: Build and SignPath Summary
@@ -430,14 +557,15 @@ jobs:
         Write-Output "Build Strategy: Sequential with Mixed Platform Support"
         Write-Output ""
         Write-Output "Platform-Specific Components Built:"
-        Write-Output "ARM64: VDD + Control Panel (VAD skipped due to WDK limitations)"
-        Write-Output "x64:   VDD + VAD + Control Panel"
+        Write-Output "ARM64: VDD + Control App (VAD skipped due to WDK limitations)"
+        Write-Output "x64:   VDD + VAD + Control App"
         Write-Output ""
         Write-Output "This workflow successfully:"
-        Write-Output "✅ Built ARM64 VDD and Control Panel first"
+        Write-Output "✅ Built ARM64 VDD and Electron Control App first"
         Write-Output "✅ Built x64 drivers after ARM64 completion (VDD + VAD)"
         Write-Output "✅ Created unified package containing all working components"
         Write-Output "✅ Submitted single unified package to SignPath for code signing"
+        Write-Output "✅ Built installer using signed components"
         Write-Output "✅ Generated automatic release tags for version tracking"
         Write-Output ""
         Write-Output "Benefits of This Approach:"
@@ -446,12 +574,21 @@ jobs:
         Write-Output "• Single SignPath submission for all platforms"
         Write-Output "• Works around WDK ARM64 cross-compilation limitations"
         Write-Output "• VAD still available for primary x64 platform"
+        Write-Output "• Electron-based Control App for modern UI experience"
+        Write-Output "• Automated installer generation from signed components"
         Write-Output ""
         Write-Output "SignPath Integration Status:"
         if ('${{ steps.signpath_unified_request.outcome }}' -eq 'success') { 
           Write-Output "✅ Unified package (mixed platforms) submitted and signed successfully"
         } else { 
           Write-Output "❌ Unified package signing failed or skipped"
+        }
+        Write-Output ""
+        Write-Output "Installer Build Status:"
+        if ('${{ env.INSTALLER_PATH }}' -ne '') { 
+          Write-Output "✅ Virtual Driver Installer built successfully"
+        } else { 
+          Write-Output "❌ Installer build failed or skipped"
         }
         Write-Output ""
         Write-Output "⚠️  Note: ARM64 VAD skipped due to Windows Driver Kit cross-compilation issues"
