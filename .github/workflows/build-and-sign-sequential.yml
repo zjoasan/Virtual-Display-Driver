@@ -48,8 +48,6 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version: '18'
-        cache: 'npm'
-        cache-dependency-path: '**/package-lock.json'
         
     # Build Virtual Display Driver for ARM64
     - name: Build Virtual Display Driver (ARM64)
@@ -215,8 +213,6 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version: '18'
-        cache: 'npm'
-        cache-dependency-path: '**/package-lock.json'
         
     # Build Virtual Display Driver for x64
     - name: Build Virtual Display Driver (x64)
