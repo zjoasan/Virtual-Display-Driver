@@ -423,9 +423,19 @@ jobs:
         path: ${{ env.PACKAGE_ZIP }}
         retention-days: 30
         
+    # Upload ZIP for SignPath
+    - name: Upload ZIP for SignPath
+      if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/')) && github.event.inputs.skip_signing != 'true'
+      id: upload_for_signpath
+      uses: actions/upload-artifact@v4
+      with:
+        name: Package-For-SignPath-${{ env.RELEASE_TAG }}
+        path: ${{ env.PACKAGE_ZIP }}
+        retention-days: 1
+        
     # STEP 8: Submit to SignPath
     - name: "Step 8: Submit to SignPath"
-      if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/')) && github.event.inputs.skip_signing != 'true'
+      if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/')) && github.event.inputs.skip_signing != 'true' && steps.upload_for_signpath.outputs.artifact-id != ''
       id: signpath_request
       uses: signpath/github-action-submit-signing-request@v1
       with:
@@ -433,8 +443,7 @@ jobs:
         organization-id: '${{ vars.SIGNPATH_ORG_ID }}'
         project-slug: '${{ vars.SIGNPATH_PROJECT_SLUG }}'
         signing-policy-slug: '${{ vars.SIGNPATH_POLICY_SLUG }}'
-        artifact-configuration-slug: 'zip-package'
-        input-artifact-path: '${{ env.PACKAGE_ZIP }}'
+        github-artifact-id: '${{ steps.upload_for_signpath.outputs.artifact-id }}'
         wait-for-completion: true
         output-artifact-directory: 'signed-output'
         parameters: |
