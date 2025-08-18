@@ -446,10 +446,8 @@ jobs:
         wait-for-completion: true
         output-artifact-directory: 'signed-output'
         parameters: |
-          {
-            "Version": "${{ env.RELEASE_TAG }}",
-            "Platforms": "ARM64-VDD,x64-VDD-VAD,ControlApp,Installer"
-          }
+          Version=${{ env.RELEASE_TAG }}
+          Platforms=ARM64-VDD,x64-VDD-VAD,ControlApp,Installer
       continue-on-error: true
       
     # Upload signed package
