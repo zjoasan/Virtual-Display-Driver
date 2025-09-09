@@ -43,7 +43,14 @@ Manual installation can be found in the wiki
 The table below shows a comparison with other popular Indirect Display Driver
 projects.
 
-![Untitled-6](https://github.com/user-attachments/assets/98ccb915-5a94-42f9-818b-213ceef4c3ac)
+| Project | Iddcx version | Signed | SDR | HDR | H-Cursor | Tweakable | ARM64 Support | Custom EDID | Floating Point Refresh Rates |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| [Virtual-Display-Driver (HDR)] | 1.10 (latest) | ✅ | ✅ (8/10bit) | ✅ (1-/12bit) | ✅ | ✅ | ✅¹ | ✅ | ✅ |
+| [usbmmid_v2] |  | ✅ | ✅ (8bit) |  |  |  |  |  |  |
+| [virtual-display-rs] | 1.5 |  | ✅ (8bit) |  | ✅ | ✅ |  |  |  |
+| [parsec-vdd]| 1.5 | ✅ | ✅ (8bit) |  | ✅ | ✅ |  |  |  |
+| [lddSampleDriver] | 1.2 |  | ✅ (8bit) |  |  |  |  |  |  |
+| [RustDesklddDriver] | 1.2 |  | ✅ (8bit) |  |  |  |  |  |  |
 
 ¹ ARM64 Support in Windows 11 24H2 or later may require test signing be enabled.
 
