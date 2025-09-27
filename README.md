@@ -36,7 +36,12 @@ Unlike traditional monitors, this virtual display supports custom resolutions an
    - **Device Manager:** Check "Device Manager" under "Display Adapters."
    - **Settings:** Check display settings under system settings and see if the virtual displays show.
 
-Manual installation can be found in the wiki
+While VDC is a good and friendly way to work with VDD, you can also do a a lot manually. Like adding or removing resolutions or enable/disable 
+functions, which is done by editing vdd_settings.xml. You should be able to locate the file at the default location: 
+```C:\VirtualDisplayDriver\vdd_settings.xml ```
+
+For more information about manual installation, uninstallation and "personalization", please check out the [Wiki](https://github.com/VirtualDrivers/Virtual-Display-Driver/wiki) here on 
+the project GitHub repository. If you are into tinkering, check out the Powershell scripts in [Community scripts](https://github.com/VirtualDrivers/Virtual-Display-Driver/tree/master/Community%20Scripts).
 
 ## 🤔 Comparison with other IDDs
 
