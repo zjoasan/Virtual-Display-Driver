@@ -12,10 +12,32 @@
 #include <algorithm>
 #include <fstream>
 #include <comdef.h>
-#include <msxml6.h> // For XML parsing
 
 using namespace std;
 using namespace Microsoft::WRL;
+
+// Normalize PCI slot string from hex to decimal
+inline std::wstring NormalizeSlotHexToDecimal(const std::wstring& hexSlot) {
+    return std::to_wstring(std::wcstoul(hexSlot.c_str(), nullptr, 16));
+}
+
+// Extract slot from LocationInfo string (e.g., "PCI bus 1, device 0, function 0")
+inline std::wstring ExtractSlotFromLocationInfo(const std::wstring& locationInfo) {
+    size_t pos = locationInfo.find(L"function ");
+    if (pos != std::wstring::npos) {
+        std::wstring func = locationInfo.substr(pos + 9); // length of "function "
+        return func;
+    }
+    return L"";
+}
+
+inline std::wstring NormalizeSlotInfo(const std::wstring& rawSlot, bool isHex) {
+    return isHex ? NormalizeSlotHexToDecimal(rawSlot) : ExtractSlotFromLocationInfo(rawSlot);
+}
+
+std::wstring FormatBusDeviceFunction(UINT bus, UINT device, UINT function) {
+    return std::to_wstring(bus) + L"." + std::to_wstring(device) + L"." + std::to_wstring(function); // e.g., "1.0.0"
+}
 
 // Structure to hold GPU information
 struct GPUInfo {
@@ -47,6 +69,43 @@ struct AdapterDeviceInfo {
     LUID luid;
 };
 
+std::wstring GetSlotInfoFromDeviceId(const std::wstring& deviceId, HDEVINFO devInfo, SP_DEVINFO_DATA& devInfoData) {
+    std::wstring slotInfo = L"Slot Unknown";
+    DEVINST devInst;
+
+    // Try DEVPKEY_Device_LocationInfo
+    if (CM_Locate_DevNodeW(&devInst, const_cast<LPWSTR>(deviceId.c_str()), CM_LOCATE_DEVNODE_NORMAL) == CR_SUCCESS) {
+        DEVPROPTYPE propType;
+        ULONG propSize = 0;
+        if (CM_Get_DevNode_PropertyW(devInst, &DEVPKEY_Device_LocationInfo, &propType, nullptr, &propSize, 0) == CR_SUCCESS) {
+            std::vector<BYTE> buffer(propSize);
+            if (CM_Get_DevNode_PropertyW(devInst, &DEVPKEY_Device_LocationInfo, &propType, buffer.data(), &propSize, 0) == CR_SUCCESS) {
+                return reinterpret_cast<PWCHAR>(buffer.data());
+            }
+        }
+    }
+
+    // Fallback: SPDRP_LOCATION_INFORMATION
+    WCHAR legacyLocation[256];
+    if (SetupDiGetDeviceRegistryPropertyW(devInfo, &devInfoData, SPDRP_LOCATION_INFORMATION, nullptr,
+        (PBYTE)legacyLocation, sizeof(legacyLocation), nullptr)) {
+        return legacyLocation;
+    }
+
+    // Fallback: Parse from InstanceId
+    size_t pos = deviceId.rfind(L"\\");
+    if (pos != std::wstring::npos) {
+        std::wstring tail = deviceId.substr(pos + 1); // e.g., "4&2C1B8F3&0&0008"
+        if (tail.length() >= 4) {
+            std::wstring pciHint = tail.substr(tail.length() - 4); // "0008"
+            slotInfo = L"PCI Hint " + pciHint;
+        }
+    }
+
+    return slotInfo;
+}
+
+
 vector<AdapterDeviceInfo> GetAdapterDeviceInfos() {
     vector<AdapterDeviceInfo> adapterInfos;
 
@@ -67,26 +126,70 @@ vector<AdapterDeviceInfo> GetAdapterDeviceInfos() {
         openAdapter.pDeviceName = detail->DevicePath;
         if (!NT_SUCCESS(D3DKMTOpenAdapterFromDeviceName(&openAdapter))) continue;
 
-        // Get Device Instance ID
-        ULONG propSize = 0;
-        DEVPROPTYPE propType;
-        CM_Get_Device_Interface_PropertyW(detail->DevicePath, &DEVPKEY_Device_InstanceId, &propType, nullptr, &propSize, 0);
-        vector<BYTE> propBuffer(propSize);
-        wstring deviceId;
-        if (CM_Get_Device_Interface_PropertyW(detail->DevicePath, &DEVPKEY_Device_InstanceId, &propType, propBuffer.data(), &propSize, 0) == CR_SUCCESS) {
-            deviceId = reinterpret_cast<PWCHAR>(propBuffer.data());
-        }
+		// Get Device Instance ID
+		ULONG propSize = 0;
+		DEVPROPTYPE propType;
+		CM_Get_Device_Interface_PropertyW(detail->DevicePath, &DEVPKEY_Device_InstanceId, &propType, nullptr, &propSize, 0);
+		vector<BYTE> propBuffer(propSize);
+		wstring deviceId;
+		if (CM_Get_Device_Interface_PropertyW(detail->DevicePath, &DEVPKEY_Device_InstanceId, &propType, propBuffer.data(), &propSize, 0) == CR_SUCCESS) {
+			deviceId = reinterpret_cast<PWCHAR>(propBuffer.data());
+		}
 
-        // Get PCI slot info or fallback
-        wstring slotInfo;
-        if (CM_Get_Device_Interface_PropertyW(detail->DevicePath, &DEVPKEY_Device_LocationInfo, &propType, nullptr, &propSize, 0) == CR_SUCCESS) {
-            propBuffer.resize(propSize);
-            if (CM_Get_Device_Interface_PropertyW(detail->DevicePath, &DEVPKEY_Device_LocationInfo, &propType, propBuffer.data(), &propSize, 0) == CR_SUCCESS) {
-                slotInfo = reinterpret_cast<PWCHAR>(propBuffer.data());
-            }
-        } else {
-            slotInfo = L"Slot Unknown";
-        }
+		// Prepare SP_DEVINFO_DATA for registry fallback
+		SP_DEVINFO_DATA devInfoData = { sizeof(SP_DEVINFO_DATA) };
+		if (!SetupDiOpenDeviceInfoW(devInfo, deviceId.c_str(), nullptr, 0, &devInfoData)) {
+			slotInfo = L"Slot Unknown";
+		} else {
+			// Try DEVPKEY_Device_LocationInfo via devnode
+			DEVINST devInst;
+			slotInfo = L"Slot Unknown";
+			if (CM_Locate_DevNodeW(&devInst, const_cast<LPWSTR>(deviceId.c_str()), CM_LOCATE_DEVNODE_NORMAL) == CR_SUCCESS) {
+				propSize = 0;
+				if (CM_Get_DevNode_PropertyW(devInst, &DEVPKEY_Device_LocationInfo, &propType, nullptr, &propSize, 0) == CR_SUCCESS) {
+					propBuffer.resize(propSize);
+					if (CM_Get_DevNode_PropertyW(devInst, &DEVPKEY_Device_LocationInfo, &propType, propBuffer.data(), &propSize, 0) == CR_SUCCESS) {
+						slotInfo = reinterpret_cast<PWCHAR>(propBuffer.data());
+						slotInfo = NormalizeSlotInfo(slotInfo, false);
+					}
+				}
+			}
+
+			// Fallback: SPDRP_LOCATION_INFORMATION
+			if (slotInfo == L"Slot Unknown") {
+				WCHAR legacyLocation[256];
+				if (SetupDiGetDeviceRegistryPropertyW(devInfo, &devInfoData, SPDRP_LOCATION_INFORMATION, nullptr,
+					(PBYTE)legacyLocation, sizeof(legacyLocation), nullptr)) {
+					slotInfo = legacyLocation;
+					slotInfo = NormalizeSlotInfo(slotInfo, false);
+				}
+			}
+
+			// Fallback: parse from InstanceId
+			if (slotInfo == L"Slot Unknown") {
+				size_t pos = deviceId.rfind(L"\\");
+				if (pos != wstring::npos) {
+					wstring tail = deviceId.substr(pos + 1);
+					if (tail.length() >= 4) {
+						wstring pciHint = tail.substr(tail.length() - 4);
+						slotInfo = NormalizeSlotInfo(pciHint, true);
+					}
+				}
+			}
+			
+			// Final fallback: extract bus.device.function
+			if (slotInfo == L"Slot Unknown") {
+				ULONG propSize = 0;
+				DEVPROPTYPE propType;
+				UINT bus = 0, device = 0, function = 0;
+
+				if (SetupDiGetDeviceProperty(devInfo, &devInfoData, &DEVPKEY_Device_BusNumber, &propType, (PBYTE)&bus, sizeof(bus), &propSize, 0) &&
+					SetupDiGetDeviceProperty(devInfo, &devInfoData, &DEVPKEY_Device_Address, &propType, (PBYTE)&device, sizeof(device), &propSize, 0) &&
+					SetupDiGetDeviceProperty(devInfo, &devInfoData, &DEVPKEY_Device_FunctionNumber, &propType, (PBYTE)&function, sizeof(function), &propSize, 0)) {
+					slotInfo = FormatBusDeviceFunction(bus, device, function);
+				}
+			}
+		}
 
         adapterInfos.push_back({ deviceId, slotInfo, openAdapter.AdapterLuid });
         D3DKMT_CLOSEADAPTER closeAdapter = { openAdapter.hAdapter };
@@ -134,20 +237,8 @@ public:
     wstring target_name{};
     wstring target_device_id{};
 
-	void loadFromXML(const wchar_t* xmlPath) {
-		ComPtr<IXMLDOMDocument> doc;
-		doc.CoCreateInstance(__uuidof(DOMDocument60));
-		VARIANT_BOOL loaded;
-		if (SUCCEEDED(doc->load(_variant_t(xmlPath), &loaded)) && loaded == VARIANT_TRUE) {
-			ComPtr<IXMLDOMNode> node;
-			doc->selectSingleNode(_bstr_t(L"//friendlyname"), &node);
-			if (node) {
-				BSTR value;
-				node->get_text(&value);
-				target_name = value;
-				SysFreeString(value);
-			}
-		}
+	void xmlprovide(const std::wstring& xtarg) {
+		target_name = xtarg;
 
 		// Parse into name and slot
 		auto pos = target_name.find(L',');
@@ -155,12 +246,13 @@ public:
 		wstring parsedSlot = (pos == wstring::npos) ? L"" : target_name.substr(pos + 1);
 
 		wstring combined = parsedName + (parsedSlot.empty() ? L"" : L"," + parsedSlot);
+
+
 		if (!findAndSetAdapter(combined)) {
 			target_name = selectBestGPU();
 			findAndSetAdapter(target_name);
 		}
 	}
-
 
     wstring selectBestGPU() {
         auto gpus = getAvailableGPUs();
@@ -181,6 +273,7 @@ public:
 		auto pos = target.find(L',');
 		wstring targetName = (pos == wstring::npos) ? target : target.substr(0, pos);
 		wstring targetSlot = (pos == wstring::npos) ? L"" : target.substr(pos + 1);
+		bool isTriplet = targetSlot.find(L'.') != std::wstring::npos;
 
 		// Find all GPUs matching the friendly name
 		vector<GPUInfo> matches;
@@ -206,8 +299,10 @@ public:
 
 		// Multiple matches: use slot if provided
 		if (!targetSlot.empty()) {
+			std::wstring normalizedTarget = NormalizeSlotInfo(targetSlot, isTriplet ? false : true);
 			for (const auto& gpu : matches) {
-				if (_wcsicmp(gpu.slotInfo.c_str(), targetSlot.c_str()) == 0) {
+				std::wstring normalizedGPU = NormalizeSlotInfo(gpu.slotInfo, isTriplet ? false : true);
+				if (_wcsicmp(normalizedGPU.c_str(), normalizedTarget.c_str()) == 0) {
 					adapterLuid = gpu.desc.AdapterLuid;
 					target_device_id = gpu.deviceId;
 					hasTargetAdapter = true;
