@@ -30,9 +30,6 @@
     <ClInclude Include="Trace.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="C:\Program Files (x86)\Windows Kits\10\Include\wdf\umdf\2.25\wudfwdm.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Driver.cpp">
