@@ -38,9 +38,6 @@
     <ClCompile Include="Driver.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\..\..\..\Downloads\wudfwdm.h">
-      <DeploymentContent>true</DeploymentContent>
-    </ClInclude>
     <ClInclude Include="Driver.h" />
     <ClInclude Include="Trace.h" />
   </ItemGroup>
@@ -57,64 +54,55 @@
     <RootNamespace>MttVDD</RootNamespace>
     <WindowsTargetPlatformVersion>$(LatestTargetPlatformVersion)</WindowsTargetPlatformVersion>
     <LanguageStandard>stdcpp17</LanguageStandard>  
-   </PropertyGroup>  
-   </PropertyGroup>
+  </PropertyGroup>
   <PropertyGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <PlatformToolset>WindowsUserModeDriver10.0</PlatformToolset>
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <DriverTargetPlatform>Universal</DriverTargetPlatform>
     <LanguageStandard>stdcpp17</LanguageStandard>  
-   </PropertyGroup>  
-   </PropertyGroup>
+  </PropertyGroup>  
   <PropertyGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <PlatformToolset>WindowsUserModeDriver10.0</PlatformToolset>
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <DriverTargetPlatform>Universal</DriverTargetPlatform>
     <LanguageStandard>stdcpp17</LanguageStandard>  
-   </PropertyGroup>  
-   </PropertyGroup>
+  </PropertyGroup> 
   <PropertyGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <PlatformToolset>WindowsUserModeDriver10.0</PlatformToolset>
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <DriverTargetPlatform>Universal</DriverTargetPlatform>
     <LanguageStandard>stdcpp17</LanguageStandard>  
-   </PropertyGroup>  
-   </PropertyGroup>
+  </PropertyGroup>  
   <PropertyGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <PlatformToolset>WindowsUserModeDriver10.0</PlatformToolset>
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <DriverTargetPlatform>Universal</DriverTargetPlatform>
     <LanguageStandard>stdcpp17</LanguageStandard>  
-   </PropertyGroup>  
-   </PropertyGroup>
+  </PropertyGroup>
   <PropertyGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|ARM'">
     <PlatformToolset>WindowsUserModeDriver10.0</PlatformToolset>
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <DriverTargetPlatform>Universal</DriverTargetPlatform>
     <LanguageStandard>stdcpp17</LanguageStandard>  
-   </PropertyGroup>  
-   </PropertyGroup>
+  </PropertyGroup>  
   <PropertyGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|ARM'">
     <PlatformToolset>WindowsUserModeDriver10.0</PlatformToolset>
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <DriverTargetPlatform>Universal</DriverTargetPlatform>
     <LanguageStandard>stdcpp17</LanguageStandard>  
-   </PropertyGroup>  
-   </PropertyGroup>
+  </PropertyGroup>
   <PropertyGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">
     <PlatformToolset>WindowsUserModeDriver10.0</PlatformToolset>
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <DriverTargetPlatform>Universal</DriverTargetPlatform>
     <LanguageStandard>stdcpp17</LanguageStandard>  
-   </PropertyGroup>  
-   </PropertyGroup>
+  </PropertyGroup>  
   <PropertyGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">
     <PlatformToolset>WindowsUserModeDriver10.0</PlatformToolset>
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <DriverTargetPlatform>Universal</DriverTargetPlatform>
     <LanguageStandard>stdcpp17</LanguageStandard>  
-   </PropertyGroup>  
-   </PropertyGroup>
+  </PropertyGroup>  
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
     <TargetVersion>Windows10</TargetVersion>
@@ -124,8 +112,7 @@
     <IDDCX_VERSION_MAJOR>1</IDDCX_VERSION_MAJOR>
     <IDDCX_VERSION_MINOR>0</IDDCX_VERSION_MINOR>
     <LanguageStandard>stdcpp17</LanguageStandard>  
-   </PropertyGroup>  
-   </PropertyGroup>
+  </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
     <TargetVersion>Windows10</TargetVersion>
     <UseDebugLibraries>false</UseDebugLibraries>
@@ -134,8 +121,7 @@
     <IDDCX_VERSION_MAJOR>1</IDDCX_VERSION_MAJOR>
     <IDDCX_VERSION_MINOR>0</IDDCX_VERSION_MINOR>
     <LanguageStandard>stdcpp17</LanguageStandard>  
-   </PropertyGroup>  
-   </PropertyGroup>
+  </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
     <TargetVersion>Windows10</TargetVersion>
     <UseDebugLibraries>true</UseDebugLibraries>
@@ -146,8 +132,7 @@
     <Driver_SpectreMitigation>Spectre</Driver_SpectreMitigation>
     <UMDF_VERSION_MINOR>25</UMDF_VERSION_MINOR>
     <LanguageStandard>stdcpp17</LanguageStandard>  
-   </PropertyGroup>  
-   </PropertyGroup>
+  </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
     <TargetVersion>Windows10</TargetVersion>
     <UseDebugLibraries>false</UseDebugLibraries>
@@ -159,8 +144,7 @@
     <UMDF_VERSION_MINOR>25</UMDF_VERSION_MINOR>
     <UMDF_MINIMUM_VERSION_REQUIRED>25</UMDF_MINIMUM_VERSION_REQUIRED>
     <LanguageStandard>stdcpp17</LanguageStandard>  
-   </PropertyGroup>  
-   </PropertyGroup>
+  </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM'" Label="Configuration">
     <TargetVersion>Windows10</TargetVersion>
     <UseDebugLibraries>true</UseDebugLibraries>
@@ -169,8 +153,7 @@
     <IDDCX_VERSION_MAJOR>1</IDDCX_VERSION_MAJOR>
     <IDDCX_VERSION_MINOR>0</IDDCX_VERSION_MINOR>
     <LanguageStandard>stdcpp17</LanguageStandard>  
-   </PropertyGroup>  
-   </PropertyGroup>
+  </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM'" Label="Configuration">
     <TargetVersion>Windows10</TargetVersion>
     <UseDebugLibraries>false</UseDebugLibraries>
@@ -179,8 +162,7 @@
     <IDDCX_VERSION_MAJOR>1</IDDCX_VERSION_MAJOR>
     <IDDCX_VERSION_MINOR>0</IDDCX_VERSION_MINOR>
     <LanguageStandard>stdcpp17</LanguageStandard>  
-   </PropertyGroup>  
-   </PropertyGroup>
+  </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'" Label="Configuration">
     <TargetVersion>Windows10</TargetVersion>
     <UseDebugLibraries>true</UseDebugLibraries>
@@ -191,8 +173,7 @@
     <Driver_SpectreMitigation>Spectre</Driver_SpectreMitigation>
     <UMDF_VERSION_MINOR>25</UMDF_VERSION_MINOR>
     <LanguageStandard>stdcpp17</LanguageStandard>  
-   </PropertyGroup>  
-   </PropertyGroup>
+  </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'" Label="Configuration">
     <TargetVersion>Windows10</TargetVersion>
     <UseDebugLibraries>false</UseDebugLibraries>
@@ -204,8 +185,7 @@
     <UMDF_VERSION_MINOR>25</UMDF_VERSION_MINOR>
     <UMDF_MINIMUM_VERSION_REQUIRED>25</UMDF_MINIMUM_VERSION_REQUIRED>
     <LanguageStandard>stdcpp17</LanguageStandard>  
-   </PropertyGroup>  
-   </PropertyGroup>
+  </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Label="ExtensionSettings">
   </ImportGroup>
@@ -217,55 +197,47 @@
     <DebuggerFlavor>DbgengRemoteDebugger</DebuggerFlavor>
     <RunCodeAnalysis>true</RunCodeAnalysis>
     <LanguageStandard>stdcpp17</LanguageStandard>  
-   </PropertyGroup>  
-   </PropertyGroup>
+  </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <DebuggerFlavor>DbgengRemoteDebugger</DebuggerFlavor>
     <RunCodeAnalysis>true</RunCodeAnalysis>
     <LanguageStandard>stdcpp17</LanguageStandard>  
-   </PropertyGroup>  
-   </PropertyGroup>
+  </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <DebuggerFlavor>DbgengRemoteDebugger</DebuggerFlavor>
     <RunCodeAnalysis>true</RunCodeAnalysis>
     <Inf2CatUseLocalTime>true</Inf2CatUseLocalTime>
     <TimeStampServer />
     <LanguageStandard>stdcpp17</LanguageStandard>  
-   </PropertyGroup>  
-   </PropertyGroup>
+  </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <DebuggerFlavor>DbgengRemoteDebugger</DebuggerFlavor>
     <RunCodeAnalysis>true</RunCodeAnalysis>
     <Inf2CatUseLocalTime>true</Inf2CatUseLocalTime>
     <LanguageStandard>stdcpp17</LanguageStandard>  
-   </PropertyGroup>  
-   </PropertyGroup>
+  </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM'">
     <DebuggerFlavor>DbgengRemoteDebugger</DebuggerFlavor>
     <RunCodeAnalysis>true</RunCodeAnalysis>
     <LanguageStandard>stdcpp17</LanguageStandard>  
-   </PropertyGroup>  
-   </PropertyGroup>
+  </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM'">
     <DebuggerFlavor>DbgengRemoteDebugger</DebuggerFlavor>
     <RunCodeAnalysis>true</RunCodeAnalysis>
     <LanguageStandard>stdcpp17</LanguageStandard>  
-   </PropertyGroup>  
-   </PropertyGroup>
+  </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">
     <DebuggerFlavor>DbgengRemoteDebugger</DebuggerFlavor>
     <RunCodeAnalysis>true</RunCodeAnalysis>
     <Inf2CatUseLocalTime>true</Inf2CatUseLocalTime>
     <LanguageStandard>stdcpp17</LanguageStandard>  
-   </PropertyGroup>  
-   </PropertyGroup>
+  </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">
     <DebuggerFlavor>DbgengRemoteDebugger</DebuggerFlavor>
     <RunCodeAnalysis>true</RunCodeAnalysis>
     <Inf2CatUseLocalTime>true</Inf2CatUseLocalTime>
     <LanguageStandard>stdcpp17</LanguageStandard>  
-   </PropertyGroup>  
-   </PropertyGroup>
+  </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
       <WppEnabled>true</WppEnabled>
@@ -301,8 +273,6 @@
       <EnablePREfast>true</EnablePREfast>
       <AdditionalOptions>/D_ATL_NO_WIN_SUPPORT /DUMDF_DRIVER /DIDDCX_VERSION_MAJOR=1 /DIDDCX_VERSION_MINOR=4 /DIDDCX_MINIMUM_VERSION_REQUIRED=4 %(AdditionalOptions)</AdditionalOptions>
       <AdditionalIncludeDirectories>$(ProjectDir)..\..\Common\Include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-          <LanguageStandard>stdcpp17</LanguageStandard>  
-   </PropertyGroup>
     </ClCompile>
     <Link>
       <AdditionalDependencies>%(AdditionalDependencies);OneCoreUAP.lib;avrt.lib</AdditionalDependencies>
@@ -323,8 +293,6 @@
       <EnablePREfast>true</EnablePREfast>
       <AdditionalOptions>/D_ATL_NO_WIN_SUPPORT /DUMDF_DRIVER /DIDDCX_VERSION_MAJOR=1 /DIDDCX_VERSION_MINOR=10 /DIDDCX_MINIMUM_VERSION_REQUIRED=3 %(AdditionalOptions)</AdditionalOptions>
       <AdditionalIncludeDirectories>$(ProjectDir)..\..\Common\Include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-          <LanguageStandard>stdcpp17</LanguageStandard>  
-   </PropertyGroup>
     </ClCompile>
     <Link>
       <AdditionalDependencies>%(AdditionalDependencies);OneCoreUAP.lib;avrt.lib</AdditionalDependencies>
@@ -369,8 +337,6 @@
       <EnablePREfast>true</EnablePREfast>
       <AdditionalOptions>/D_ATL_NO_WIN_SUPPORT /DUMDF_DRIVER /DIDDCX_VERSION_MAJOR=1 /DIDDCX_VERSION_MINOR=4 /DIDDCX_MINIMUM_VERSION_REQUIRED=4 %(AdditionalOptions)</AdditionalOptions>
       <AdditionalIncludeDirectories>$(ProjectDir)..\..\Common\Include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-          <LanguageStandard>stdcpp17</LanguageStandard>  
-   </PropertyGroup>
     </ClCompile>
     <Link>
       <AdditionalDependencies>%(AdditionalDependencies);OneCoreUAP.lib;avrt.lib</AdditionalDependencies>
@@ -420,4 +386,8 @@
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
+  <Import Project="$(VCTargetsPath)\Platforms\$(Platform)\Platform.props" />
+  <Import Project="$(VCTargetsPath)\Platforms\$(Platform)\Platform.targets" />
+  <Import Project="$(WDKContentRoot)\build\inc\WDF.props" Condition="Exists('$(WDKContentRoot)\build\inc\WDF.props')" />
+  <Import Project="$(WDKContentRoot)\build\inc\WDF.targets" Condition="Exists('$(WDKContentRoot)\build\inc\WDF.targets')" />
 </Project>
