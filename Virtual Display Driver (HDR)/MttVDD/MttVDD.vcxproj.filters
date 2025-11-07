@@ -37,11 +37,9 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <None Include="readme.md" />
+    <Xml Include="..\vdd_settings.xml" />
   </ItemGroup>
   <ItemGroup>
-    <Xml Include="..\vdd_settings.xml">
-      <Filter>Resource Files</Filter>
-    </Xml>
+    <None Include="readme.md" />
   </ItemGroup>
 </Project>
