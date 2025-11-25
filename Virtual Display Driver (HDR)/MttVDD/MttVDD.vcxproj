@@ -1,8 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <!-- Configurations -->
-  <ItemGroup Label="ProjectConfigurations">
-    <!-- Setting Release|x64 first makes it the default selection in VS -->
+  <ItemGroup Label="ProjectConfigurations"><!-- Setting Release|x64 first makes it the default selection in VS -->
     <ProjectConfiguration Include="Release|x64">
       <Configuration>Release</Configuration>
       <Platform>x64</Platform>
@@ -42,11 +41,11 @@
     <IndirectDisplayDriver>true</IndirectDisplayDriver>
     <!-- Standardized to 1.5 as requested for all targets -->
     <IDDCX_VERSION_MAJOR>1</IDDCX_VERSION_MAJOR>
-    <IDDCX_VERSION_MINOR>5</IDDCX_VERSION_MINOR>
+    <IDDCX_VERSION_MINOR>10</IDDCX_VERSION_MINOR>
     <Driver_SpectreMitigation>Spectre</Driver_SpectreMitigation>
     <DebuggerFlavor>DbgengRemoteDebugger</DebuggerFlavor>
     <RunCodeAnalysis>true</RunCodeAnalysis>
-  </PropertyGroup>
+  </PropertyGroup><PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='Release|x64'"><SupportsPackaging>false</SupportsPackaging></PropertyGroup><PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'"><SupportsPackaging>false</SupportsPackaging></PropertyGroup>
 
   <!-- Imports (CRITICAL: Load WDK properties after default C++ properties) -->
   <Import Project="$(VCTargetsPath)Microsoft.Cpp.Default.props" />
@@ -80,7 +79,7 @@
 
   <!-- Per-config overrides -->
   <PropertyGroup Condition="'$(Configuration)'=='Debug'">
-    <UseDebugLibraries>true</UseDebugLibraries>
+    
   </PropertyGroup>
   <PropertyGroup Condition="'$(Platform)'=='x64'">
     <ALLOW_DATE_TIME>1</ALLOW_DATE_TIME>
@@ -91,28 +90,21 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
       <AdditionalOptions>/D_ATL_NO_WIN_SUPPORT /DUMDF_DRIVER /DIDDCX_VERSION_MAJOR=$(IDDCX_VERSION_MAJOR) /DIDDCX_VERSION_MINOR=$(IDDCX_VERSION_MINOR) /DIDDCX_MINIMUM_VERSION_REQUIRED=4 %(AdditionalOptions)</AdditionalOptions>
-      <WarningLevel>Level1</WarningLevel>
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
       <TreatWarningAsError>false</TreatWarningAsError>
       <LanguageStandard>stdcpp17</LanguageStandard>
-    </ClCompile>
-    <DriverSign>
-      <FileDigestAlgorithm>SHA1</FileDigestAlgorithm>
-    </DriverSign>
+    </ClCompile><DriverSign><FileDigestAlgorithm>SHA1</FileDigestAlgorithm></DriverSign><Link />
   </ItemDefinitionGroup>
 
   <!-- x64 Release Configuration -->
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
       <AdditionalOptions>/D_ATL_NO_WIN_SUPPORT /DUMDF_DRIVER /DIDDCX_VERSION_MAJOR=$(IDDCX_VERSION_MAJOR) /DIDDCX_VERSION_MINOR=$(IDDCX_VERSION_MINOR) /DIDDCX_MINIMUM_VERSION_REQUIRED=3 %(AdditionalOptions)</AdditionalOptions>
-      <LanguageStandard>stdcpp17</LanguageStandard>
-    </ClCompile>
-    <DriverSign>
-      <FileDigestAlgorithm>SHA256</FileDigestAlgorithm>
-    </DriverSign>
+      <LanguageStandard>stdcpp17</LanguageStandard><WarningLevel>TurnOffAllWarnings</WarningLevel><TreatWarningAsError>false</TreatWarningAsError>
+    </ClCompile><DriverSign><FileDigestAlgorithm>SHA1</FileDigestAlgorithm></DriverSign><Link />
   </ItemDefinitionGroup>
 
   <!-- Misc -->
   <PropertyGroup>
     <DisableDuplicatesInImportedFiles>true</DisableDuplicatesInImportedFiles>
-  </PropertyGroup>
-</Project>
+  </PropertyGroup><PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'"><EnableInf2cat>true</EnableInf2cat></PropertyGroup><PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'"><EnableInf2cat>true</EnableInf2cat></PropertyGroup></Project>
