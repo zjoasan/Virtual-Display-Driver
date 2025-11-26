@@ -10,47 +10,70 @@
       <Configuration>Debug</Configuration>
       <Platform>x64</Platform>
     </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|ARM64">
+	  <Configuration>Debug</Configuration>
+	  <Platform>ARM64</Platform>
+    </ProjectConfiguration>
+	<ProjectConfiguration Include="Release|ARM64">
+	  <Configuration>Release</Configuration>
+	  <Platform>ARM64</Platform>
+	</ProjectConfiguration>
   </ItemGroup>
 
   <!-- Sources -->
   <ItemGroup>
     <ClCompile Include="Driver.cpp" />
+  </ItemGroup>
+  <ItemGroup>
     <ClInclude Include="Driver.h" />
     <ClInclude Include="Trace.h" />
-    <Inf Include="MttVDD.inf" />
-    <None Include="readme.md" />
-    <Xml Include="..\vdd_settings.xml" />
   </ItemGroup>
-
+  <ItemGroup>
+    <Inf Include="MttVDD.inf" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="readme.md" />
+  </ItemGroup>
+  <ItemGroup>
+      <Xml Include="..\vdd_settings.xml" />
+  </ItemGroup>
+  <ItemGroup>
+      <Bat Include="..\install_experimental_VDD.bat" />
+  </ItemGroup>
+  <ItemGroup>
+      <Bat Include="..\uninstall.bat" />
+  </ItemGroup>
+  
   <!-- Globals -->
   <PropertyGroup Label="Globals">
-    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <ProjectGuid>{2D54CB75-8B17-4F11-97DC-847B0244CD46}</ProjectGuid>
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
     <DriverType>Display</DriverType>
     <DriverTargetPlatform>Universal</DriverTargetPlatform>
-    <ProjectGuid>{2D54CB75-8B17-4F11-97DC-847B0244CD46}</ProjectGuid>
     <RootNamespace>MttVDD</RootNamespace>
-    <!-- NOTE: Must install WDK/SDK 10.0.26100.0 -->
     <WindowsTargetPlatformVersion>10.0.26100.0</WindowsTargetPlatformVersion>
     <DriverTargetPlatformVersion>10.0.26100.0</DriverTargetPlatformVersion>
     <PlatformToolset>WindowsUserModeDriver10.0</PlatformToolset>
-    <LanguageStandard>stdcpp17</LanguageStandard>
     <TargetVersion>Windows10</TargetVersion>
     <UMDF_VERSION_MAJOR>2</UMDF_VERSION_MAJOR>
     <UMDF_VERSION_MINOR>25</UMDF_VERSION_MINOR>
     <UMDF_MINIMUM_VERSION_REQUIRED>25</UMDF_MINIMUM_VERSION_REQUIRED>
     <IndirectDisplayDriver>true</IndirectDisplayDriver>
-    <!-- Standardized to 1.5 as requested for all targets -->
     <IDDCX_VERSION_MAJOR>1</IDDCX_VERSION_MAJOR>
     <IDDCX_VERSION_MINOR>10</IDDCX_VERSION_MINOR>
     <Driver_SpectreMitigation>Spectre</Driver_SpectreMitigation>
     <DebuggerFlavor>DbgengRemoteDebugger</DebuggerFlavor>
-    <RunCodeAnalysis>true</RunCodeAnalysis>
-  </PropertyGroup><PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='Release|x64'"><SupportsPackaging>false</SupportsPackaging></PropertyGroup><PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'"><SupportsPackaging>false</SupportsPackaging></PropertyGroup>
+    <RunCodeAnalysis>true</RunCodeAnalysis>
+	<Inf2CatUseLocalTime>true</Inf2CatUseLocalTime>
+	<EnableInf2cat>true</EnableInf2cat>
+	<TimeStampServer>http://timestamp.globalsign.com/scripts/timstamp.dll</TimeStampServer>	
+    <LanguageStandard>stdcpp17</LanguageStandard>
+  </PropertyGroup>
 
   <!-- Imports (CRITICAL: Load WDK properties after default C++ properties) -->
   <Import Project="$(VCTargetsPath)Microsoft.Cpp.Default.props" />
   <Import Project="$(VCTargetsPath)Microsoft.Cpp.props" />
-  <Import Project="$(VCTargetsPath)Microsoft.Cpp.targets" />
+
   <Import Project="$(WDKContentRoot)build\inc\WDF.props" Condition="Exists('$(WDKContentRoot)\build\inc\WDF.props')" />
   <Import Project="$(WDKContentRoot)build\inc\WDF.targets" Condition="Exists('$(WDKContentRoot)\build\inc\WDF.targets')" />
 
@@ -64,47 +87,47 @@
       <EnablePREfast>true</EnablePREfast>
       <!-- Use this line only for project-specific includes (e.g., Common\Include) -->
       <AdditionalIncludeDirectories>$(ProjectDir)..\..\Common\Include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/D_ATL_NO_WIN_SUPPORT /DUMDF_DRIVER /DIDDCX_VERSION_MAJOR=$(IDDCX_VERSION_MAJOR) /DIDDCX_VERSION_MINOR=$(IDDCX_VERSION_MINOR) /DIDDCX_MINIMUM_VERSION_REQUIRED=4 %(AdditionalOptions)</AdditionalOptions>      
+      <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
       <AdditionalDependencies>%(AdditionalDependencies);OneCoreUAP.lib;avrt.lib</AdditionalDependencies>
     </Link>
     <PostBuildEvent Condition="Exists('$(WDKContentRoot)\bin\wdf\umdf\WUDFRd.sys')">
       <Command>copy "$(WDKContentRoot)bin\wdf\umdf\WUDFRd.sys" "$(TargetDir)"</Command>
-    </PostBuildEvent>
-    <PostBuildEvent>
       <Command>copy "$(ProjectDir)..\vdd_settings.xml" "$(TargetDir)MttVDD"</Command>
     </PostBuildEvent>
+    <Inf>
+	  <DateStamp>11/26/2025</DateStamp>
+	</Inf>
+	<DriverSign>
+	  <FileDigestAlgorithm>SHA256</FileDigestAlgorithm>
+	</DriverSign>
   </ItemDefinitionGroup>
 
-  <!-- Per-config overrides -->
-  <PropertyGroup Condition="'$(Configuration)'=='Debug'">
-    
-  </PropertyGroup>
-  <PropertyGroup Condition="'$(Platform)'=='x64'">
-    <ALLOW_DATE_TIME>1</ALLOW_DATE_TIME>
-    <Inf2CatUseLocalTime>true</Inf2CatUseLocalTime>
-  </PropertyGroup>
-
-  <!-- x64 Debug Configuration -->
-  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+  <!-- Debug VS Release Configuration -->
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'">
     <ClCompile>
-      <AdditionalOptions>/D_ATL_NO_WIN_SUPPORT /DUMDF_DRIVER /DIDDCX_VERSION_MAJOR=$(IDDCX_VERSION_MAJOR) /DIDDCX_VERSION_MINOR=$(IDDCX_VERSION_MINOR) /DIDDCX_MINIMUM_VERSION_REQUIRED=4 %(AdditionalOptions)</AdditionalOptions>
-      <WarningLevel>TurnOffAllWarnings</WarningLevel>
-      <TreatWarningAsError>false</TreatWarningAsError>
-      <LanguageStandard>stdcpp17</LanguageStandard>
-    </ClCompile><DriverSign><FileDigestAlgorithm>SHA1</FileDigestAlgorithm></DriverSign><Link />
+      <TreatWarningAsError>true</TreatWarningAsError>
+      <WarningLevel>Level3</WarningLevel>
+    </ClCompile>
   </ItemDefinitionGroup>
-
-  <!-- x64 Release Configuration -->
-  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+  
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'">
     <ClCompile>
-      <AdditionalOptions>/D_ATL_NO_WIN_SUPPORT /DUMDF_DRIVER /DIDDCX_VERSION_MAJOR=$(IDDCX_VERSION_MAJOR) /DIDDCX_VERSION_MINOR=$(IDDCX_VERSION_MINOR) /DIDDCX_MINIMUM_VERSION_REQUIRED=3 %(AdditionalOptions)</AdditionalOptions>
-      <LanguageStandard>stdcpp17</LanguageStandard><WarningLevel>TurnOffAllWarnings</WarningLevel><TreatWarningAsError>false</TreatWarningAsError>
-    </ClCompile><DriverSign><FileDigestAlgorithm>SHA1</FileDigestAlgorithm></DriverSign><Link />
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <TreatWarningAsError>false</TreatWarningAsError>
+    </ClCompile>
   </ItemDefinitionGroup>
 
   <!-- Misc -->
   <PropertyGroup>
     <DisableDuplicatesInImportedFiles>true</DisableDuplicatesInImportedFiles>
-  </PropertyGroup><PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'"><EnableInf2cat>true</EnableInf2cat></PropertyGroup><PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'"><EnableInf2cat>true</EnableInf2cat></PropertyGroup></Project>
+  </PropertyGroup>
+  <ItemGroup>
+    <FilesToPackage Include="$(TargetPath)" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)Microsoft.Cpp.targets" />  
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>
