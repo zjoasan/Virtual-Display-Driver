@@ -95,7 +95,9 @@
     </Link>
     <PostBuildEvent Condition="Exists('$(WDKContentRoot)\bin\wdf\umdf\WUDFRd.sys')">
       <Command>copy "$(WDKContentRoot)bin\wdf\umdf\WUDFRd.sys" "$(TargetDir)"</Command>
-      <Command>copy "$(ProjectDir)..\vdd_settings.xml" "$(TargetDir)MttVDD"</Command>
+      <Command>copy "$(ProjectDir)..\vdd_settings.xml" "$(TargetDir)MttVDD\"</Command>
+      <Command>copy "$(ProjectDir)..\install_experimental_VDD.bat" "$(TargetDir)MttVDD\"</Command>
+      <Command>copy "$(ProjectDir)..\uninstall.bat" "$(TargetDir)MttVDD\"</Command>
     </PostBuildEvent>
     <Inf>
 	  <DateStamp>11/26/2025</DateStamp>

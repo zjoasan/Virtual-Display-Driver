@@ -40,12 +40,12 @@ if exist "%FOLDER%" (
     md %FOLDER%
     copy %NEWFILE%" %FOLDER%\%NEWFILE%
 )
-copy "uninstall.bat" %FOLDER%\
-copy "MttVDD.inf" %FOLDER%\
-copy "MttVDD.dll" %FOLDER%\
-copy "MttVDD.cer" %FOLDER%\
-copy "mttvdd.cat" %FOLDER%\
-copy "install_experimental_VDD.bat" %FOLDER%\
+copy "%~dpuninstall.bat" %FOLDER%
+copy "%~dpMttVDD.inf" %FOLDER%
+copy "%~dpMttVDD.dll" %FOLDER%
+copy "%~dpMttVDD.cer" %FOLDER%
+copy "%~dpmttvdd.cat" %FOLDER%
+copy "%~dpinstall_experimental_VDD.bat" %FOLDER%
 
 echo.
 echo ==================================================

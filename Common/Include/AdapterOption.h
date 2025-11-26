@@ -11,13 +11,16 @@
 #include <fstream>
 #include <cwchar>
 #include <iomanip>
-#include <cctype> // Required for towlower in the case-insensitive search
+#include <cctype> 
+#include <locale> 
 
 #pragma comment(lib, "dxgi.lib")
 #pragma comment(lib, "setupapi.lib")
 
 using namespace std;
 using namespace Microsoft::WRL;
+
+
 
 // DEVPKEY_Device_Luid: {60b193cb-5276-4d0f-96fc-f173ab17af69}, 2
 static const DEVPROPKEY DEVPKEY_Device_Luid_Custom = {
@@ -32,18 +35,16 @@ struct GPUInfo {
 };
 
 class GpuMapper {
-private:
-    // Helper: Simple logger for remote debugging (Kept PRIVATE)
+public:
     static void Log(const wstring& msg) {
-        // Saves to the folder where the .exe is running
+        
         wofstream logFile("gpu_debug.log", ios::app);
         if (logFile.is_open()) {
             logFile << msg << endl;
         }
     }
 
-public: // *** CONTAINSCASEINSENSITIVE MOVED TO PUBLIC TO FIX C2248 ***
-    // Helper: Case-insensitive substring find
+public: 
     static bool ContainsCaseInsensitive(const wstring& source, const wstring& substring) {
         if (substring.empty()) return true;
         auto it = search(
@@ -86,25 +87,21 @@ public: // *** CONTAINSCASEINSENSITIVE MOVED TO PUBLIC TO FIX C2248 ***
 
         for (DWORD i = 0; SetupDiEnumDeviceInfo(devInfo, i, &devData); ++i) {
             
-            // 1. Get Location
             WCHAR location[256];
             if (!SetupDiGetDeviceRegistryPropertyW(devInfo, &devData, SPDRP_LOCATION_INFORMATION,
                 nullptr, (PBYTE)location, sizeof(location), nullptr)) {
                 continue;
             }
 
-            // 2. Get Name (for logging/verification)
             WCHAR friendlyName[256];
             SetupDiGetDeviceRegistryPropertyW(devInfo, &devData, SPDRP_DEVICEDESC, 
                 nullptr, (PBYTE)friendlyName, sizeof(friendlyName), nullptr);
 
             wstring locStr = location;
             
-            // Log what we found
             wstring logMsg = L"Found: [" + wstring(friendlyName) + L"] at [" + locStr + L"]";
             Log(logMsg);
 
-            // 3. Parse Bus
             size_t pos = locStr.find(L"PCI bus ");
             if (pos != wstring::npos) {
                 uint32_t currentBus = wcstoul(locStr.substr(pos + 8).c_str(), nullptr, 10);
@@ -112,7 +109,6 @@ public: // *** CONTAINSCASEINSENSITIVE MOVED TO PUBLIC TO FIX C2248 ***
                 if (currentBus == targetBusIndex) {
                     Log(L"-> BUS MATCHED!");
 
-                    // 4. Name Safety Check (Case Insensitive)
                     if (!nameHint.empty()) {
                         if (!ContainsCaseInsensitive(friendlyName, nameHint) && 
                             !ContainsCaseInsensitive(nameHint, friendlyName)) {
@@ -121,7 +117,6 @@ public: // *** CONTAINSCASEINSENSITIVE MOVED TO PUBLIC TO FIX C2248 ***
                         }
                     }
 
-                    // 5. Get LUID
                     LUID deviceLuid = {};
                     DEVPROPTYPE propType;
                     ULONG propSize = 0;
@@ -166,20 +161,41 @@ public:
     void load(const wchar_t* path) {
         ifstream ifs{ path };
         if (!ifs.is_open()) {
-            target_name = selectBestGPU();
-        } else {
-            string line;
-            getline(ifs, line);
-            target_name.assign(line.begin(), line.end());
+            GpuMapper::Log(L"WARN: Configuration file not found. Falling back to Best GPU.");
+            setBestAvailableAdapter();
+            target_name = L""; 
+            return;
+        } 
+        
+        string line;
+        getline(ifs, line);
+        target_name.assign(line.begin(), line.end());
+
+
+        if (target_name.empty()) {
+            GpuMapper::Log(L"WARN: Configuration file was empty. Falling back to Best GPU.");
+            setBestAvailableAdapter();
+            return;
         }
+
         findAndSetAdapter(target_name);
     }
 
     void xmlprovide(const wstring& xtarg) {
         target_name = xtarg;
+
+        wstring lowerTarget = target_name;
+        transform(lowerTarget.begin(), lowerTarget.end(), lowerTarget.begin(), ::towlower);
+        
+        if (lowerTarget == L"default") { 
+            setBestAvailableAdapter();
+            return; 
+        }
+        
         findAndSetAdapter(target_name);
     }
 
+    // Replace IDDCX_ADAPTER with a dummy type if IDD headers aren't available
     void apply(const IDDCX_ADAPTER& adapter) {
         if (hasTargetAdapter && IDD_IS_FUNCTION_AVAILABLE(IddCxAdapterSetRenderAdapter)) {
             IDARG_IN_ADAPTERSETRENDERADAPTER arg{};
@@ -189,6 +205,25 @@ public:
     }
 
 private:
+    bool setBestAvailableAdapter() {
+        auto gpus = GpuMapper::getAvailableGPUs();
+        if (gpus.empty()) {
+            GpuMapper::Log(L"ERROR: No available GPUs found for best GPU selection.");
+            hasTargetAdapter = false;
+            return false;
+        }
+
+        sort(gpus.begin(), gpus.end(), [](const GPUInfo& a, const GPUInfo& b) {
+            return a.desc.DedicatedVideoMemory > b.desc.DedicatedVideoMemory;
+        });
+        
+        adapterLuid = gpus.front().desc.AdapterLuid;
+        hasTargetAdapter = true;
+        GpuMapper::Log(L"INFO: Falling back/Defaulting to Best GPU: " + gpus.front().name);
+        return true;
+    }
+
+
     bool findAndSetAdapter(const wstring& adapterSpec) {
         size_t comma = adapterSpec.find(L',');
         
@@ -196,7 +231,6 @@ private:
             wstring namePart = adapterSpec.substr(0, comma);
             wstring busPart = adapterSpec.substr(comma + 1);
             
-            // Strip whitespace from bus part if necessary
             busPart.erase(remove_if(busPart.begin(), busPart.end(), iswspace), busPart.end());
 
             uint32_t bus = wcstoul(busPart.c_str(), nullptr, 10);
@@ -205,22 +239,22 @@ private:
             if (luidOpt.has_value()) {
                 adapterLuid = luidOpt.value();
                 hasTargetAdapter = true;
-                return true;
+                return true; 
             }
-        } else {
-            // Legacy Name-only match
-            auto gpus = GpuMapper::getAvailableGPUs();
-            for (const auto& gpu : gpus) {
-                // Use the now-public GpuMapper::ContainsCaseInsensitive
-                if (GpuMapper::ContainsCaseInsensitive(gpu.name, adapterSpec)) {
-                    adapterLuid = gpu.desc.AdapterLuid;
-                    hasTargetAdapter = true;
-                    return true;
-                }
+        } 
+        
+        auto gpus = GpuMapper::getAvailableGPUs();
+        wstring searchTarget = (comma == wstring::npos) ? adapterSpec : adapterSpec.substr(0, comma);
+        
+        for (const auto& gpu : gpus) {
+            if (GpuMapper::ContainsCaseInsensitive(gpu.name, searchTarget)) {
+                adapterLuid = gpu.desc.AdapterLuid;
+                hasTargetAdapter = true;
+                return true; 
             }
         }
         
-        hasTargetAdapter = false;
-        return false;
+        GpuMapper::Log(L"WARN: Specified adapter '" + adapterSpec + L"' not found by name/bus.");
+        return setBestAvailableAdapter();
     }
 };
