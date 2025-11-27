@@ -15,8 +15,27 @@ if %errorlevel% neq 0 (
 )
 
 echo.
+echo Verifying required files...
+if not exist "%~dp0MttVDD.cat" (
+    if exist "%~dp0mttvdd.cat" (
+        echo Catalog file found with lowercase name, ensuring correct case...
+        copy "%~dp0mttvdd.cat" "%~dp0MttVDD.cat" >nul 2>&1
+    ) else (
+        echo ERROR: Catalog file (MttVDD.cat) not found!
+        echo This is required for driver installation with PnpLockdown enabled.
+        pause
+        exit /b 1
+    )
+)
+if not exist "%~dp0MttVDD.dll" (
+    echo ERROR: Driver DLL (MttVDD.dll) not found!
+    pause
+    exit /b 1
+)
+
+echo.
 echo Installing driver...
-pnputil /add-driver "%~dp0MttVDD.inf" /install >nul 2>&1
+pnputil /add-driver "%~dp0MttVDD.inf" /install
 if %errorlevel% neq 0 (
     echo ERROR: Driver installation failed. Reboot might be needed.
 	echo -----
