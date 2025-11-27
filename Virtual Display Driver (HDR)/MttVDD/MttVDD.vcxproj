@@ -100,10 +100,10 @@
       <Command>copy "$(ProjectDir)..\uninstall.bat" "$(TargetDir)MttVDD\"</Command>
     </PostBuildEvent>
     <Inf>
-	  <DateStamp>11/26/2025</DateStamp>
+	  <DateStamp>11/27/2025</DateStamp>
 	</Inf>
 	<DriverSign>
-	  <FileDigestAlgorithm>SHA256</FileDigestAlgorithm>
+	  <FileDigestAlgorithm>SHA1</FileDigestAlgorithm>
 	</DriverSign>
   </ItemDefinitionGroup>
 
