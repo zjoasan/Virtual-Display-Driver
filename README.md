@@ -12,6 +12,14 @@ This project creates a _virtual monitor_ in Windows that functions just like a p
 
 Unlike traditional monitors, this virtual display supports custom resolutions and refresh rates beyond hardware limitations—offering greater flexibility for advanced setups. You can also use custom EDIDs to simulate or emulate existing hardware displays.
 
+## 🧾 Changelog (recent)
+
+- **PCI-bus based GPU selection (LUID)**: Improved multi-GPU render adapter selection by resolving an adapter **LUID from a PCI bus number** (more deterministic than name-only matching).
+- **Device/PCI-slot friendly naming**: Improved device identification / friendly naming using DeviceID and PCI slot info.
+- **GetIddCx helper tool**: Added source for the `GetIddCx` utility to query IddCx versions.
+- **EDID integration**: Added EDID integration support for custom/virtual monitor profiles.
+- **Performance optimization**: Driver performance improvements (various internal optimizations).
+
 ## ⬇️ Download Latest Version
 
 - [Driver Installer (Windows 10/11)](https://github.com/VirtualDrivers/Virtual-Display-Driver/releases) - Check the [Releases](https://github.com/VirtualDrivers/Virtual-Display-Driver/releases) page for the latest version and release notes.
