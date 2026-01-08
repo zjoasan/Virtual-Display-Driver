@@ -24,7 +24,7 @@ using namespace Microsoft::WRL;
 
 // DEVPKEY_Device_Luid: {60b193cb-5276-4d0f-96fc-f173ab17af69}, 2
 static const DEVPROPKEY DEVPKEY_Device_Luid_Custom = {
-    { 0x60b193cb, 0x5276, 0x4d0f, { 0x96, 0xfc, 0xf1, 0x73, 0xab, 0x17, 0xaf, 0x69 } },
+    { 0x60b193cb, 0x5276, 0x4d0f, { 0x96, 0xfc, 0xf1, 0x73, 0xab, 0xad, 0x3e, 0xc6 } },
     2
 };
 
@@ -87,10 +87,12 @@ public:
 
         for (DWORD i = 0; SetupDiEnumDeviceInfo(devInfo, i, &devData); ++i) {
             
-            WCHAR location[256];
-            if (!SetupDiGetDeviceRegistryPropertyW(devInfo, &devData, SPDRP_LOCATION_INFORMATION,
-                nullptr, (PBYTE)location, sizeof(location), nullptr)) {
-                continue;
+            WCHAR location[256]; // old crap
+            location[0] = L'\0'; // old crap
+            uint32_t currentBus = -1;
+            if (!SetupDiGetDeviceRegistryPropertyW(devInfo, &devData, SPDRP_BUSNUMBER,
+                nullptr, (PBYTE)&currentBus, sizeof(currentBus), nullptr)) {
+                 continue;
             }
 
             WCHAR friendlyName[256];
@@ -99,13 +101,12 @@ public:
 
             wstring locStr = location;
             
-            wstring logMsg = L"Found: [" + wstring(friendlyName) + L"] at [" + locStr + L"]";
+            wstring logMsg = L"Found: [" + wstring(friendlyName) + L"] at [" + std::to_wstring(currentBus) + L"]";
             Log(logMsg);
 
-            size_t pos = locStr.find(L"PCI bus ");
-            if (pos != wstring::npos) {
-                uint32_t currentBus = wcstoul(locStr.substr(pos + 8).c_str(), nullptr, 10);
-                
+            size_t pos = locStr.find(L"PCI bus "); // old crap
+            {
+    
                 if (currentBus == targetBusIndex) {
                     Log(L"-> BUS MATCHED!");
 
