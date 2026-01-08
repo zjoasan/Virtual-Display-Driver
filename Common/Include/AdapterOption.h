@@ -3,6 +3,14 @@
 #include <wrl/client.h> 	// For ComPtr
 #include <dxgi.h>       	// For IDXGIAdapter, IDXGIFactory1
 #include <algorithm>    	// For sort
+#include <setupapi.h>
+#include <devguid.h>
+#include <devpkey.h>
+#include <cstdint>
+#include <optional>
+#include <string>
+#include <vector>
+#include <fstream>
 
 using namespace std;
 using namespace Microsoft::WRL;
@@ -47,6 +55,68 @@ vector<GPUInfo> getAvailableGPUs() {
     }
 
     return gpus;
+}
+
+// Resolve an adapter LUID from a PCI bus number by enumerating display devices (SetupAPI).
+// Returns nullopt if no match is found or if the system doesn't expose the LUID property.
+inline std::optional<LUID> ResolveAdapterLuidFromPciBus(uint32_t targetBusIndex) {
+    HDEVINFO devInfo = SetupDiGetClassDevsW(&GUID_DEVCLASS_DISPLAY, nullptr, nullptr, DIGCF_PRESENT);
+    if (devInfo == INVALID_HANDLE_VALUE) {
+        return std::nullopt;
+    }
+
+    SP_DEVINFO_DATA devData = {};
+    devData.cbSize = sizeof(devData);
+
+    std::optional<LUID> result = std::nullopt;
+
+    for (DWORD i = 0; SetupDiEnumDeviceInfo(devInfo, i, &devData); ++i) {
+        DWORD currentBus = 0;
+        if (!SetupDiGetDeviceRegistryPropertyW(
+                devInfo,
+                &devData,
+                SPDRP_BUSNUMBER,
+                nullptr,
+                reinterpret_cast<PBYTE>(&currentBus),
+                sizeof(currentBus),
+                nullptr)) {
+            continue;
+        }
+
+        if (static_cast<uint32_t>(currentBus) != targetBusIndex) {
+            continue;
+        }
+
+        // DEVPKEY_Device_Luid is exposed as a UINT64 on Windows; convert into LUID.
+        DEVPROPTYPE propType = 0;
+        ULONG propSize = 0;
+        ULONGLONG luid64 = 0;
+
+        if (!SetupDiGetDevicePropertyW(
+                devInfo,
+                &devData,
+                &DEVPKEY_Device_Luid,
+                &propType,
+                reinterpret_cast<PBYTE>(&luid64),
+                sizeof(luid64),
+                &propSize,
+                0)) {
+            continue;
+        }
+
+        if (propType != DEVPROP_TYPE_UINT64 || propSize != sizeof(luid64)) {
+            continue;
+        }
+
+        LUID luid{};
+        luid.LowPart = static_cast<DWORD>(luid64 & 0xFFFFFFFFull);
+        luid.HighPart = static_cast<LONG>((luid64 >> 32) & 0xFFFFFFFFull);
+        result = luid;
+        break;
+    }
+
+    SetupDiDestroyDeviceInfoList(devInfo);
+    return result;
 }
 
 class AdapterOption {
@@ -110,8 +180,32 @@ public:
     }
 
 private:
-    // Find and set the adapter by its name
-    bool findAndSetAdapter(const wstring& adapterName) {
+    // Find and set the adapter by name, optionally using "name,bus" where bus is the PCI bus number.
+    bool findAndSetAdapter(const wstring& adapterSpec) {
+        // If user provides "name,bus", use bus to resolve LUID (more deterministic on multi-GPU setups).
+        const size_t comma = adapterSpec.find(L',');
+        if (comma != wstring::npos) {
+            const wstring namePart = adapterSpec.substr(0, comma);
+            wstring busPart = adapterSpec.substr(comma + 1);
+            // Trim whitespace in bus part
+            busPart.erase(remove_if(busPart.begin(), busPart.end(), iswspace), busPart.end());
+
+            wchar_t* end = nullptr;
+            const unsigned long busUl = wcstoul(busPart.c_str(), &end, 10);
+            const bool parsedOk = (end != nullptr) && (*end == L'\0') && (end != busPart.c_str());
+            if (parsedOk && busUl <= 0xFFFFFFFFul) {
+                if (auto luidOpt = ResolveAdapterLuidFromPciBus(static_cast<uint32_t>(busUl)); luidOpt.has_value()) {
+                    adapterLuid = luidOpt.value();
+                    hasTargetAdapter = true;
+                    return true;
+                }
+            }
+
+            // Fall through to name matching using the name portion.
+            return findAndSetAdapter(namePart);
+        }
+
+        const wstring& adapterName = adapterSpec;
         auto gpus = getAvailableGPUs();
 
         // Iterate through all available GPUs
