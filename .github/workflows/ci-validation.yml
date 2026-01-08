@@ -1,0 +1,110 @@
+name: Fast CI Validation
+
+on:
+  pull_request:
+    branches: [ main, master ]
+  push:
+    branches: [ main, master ]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'LICENSE*'
+
+env:
+  BUILD_CONFIGURATION: Release
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup MSBuild
+      uses: microsoft/setup-msbuild@v2
+
+    - name: Install Windows Driver Kit (WDK)
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = "Stop"
+        choco install windowsdriverkit11 -y --no-progress
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '6.0.x'
+
+    - name: Quick VDD Compilation Check
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = "Stop"
+        Write-Output "Performing quick VDD compilation check..."
+        $vddSln = "Virtual Display Driver (HDR)/MTTVDD.sln"
+        if (-not (Test-Path $vddSln)) { throw "VDD solution file not found at: $vddSln" }
+        msbuild $vddSln /p:Configuration=$env:BUILD_CONFIGURATION /p:Platform=x64 /verbosity:minimal /target:Build
+
+    - name: Quick VAD Compilation Check
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = "Stop"
+        Write-Output "Performing quick VAD compilation check..."
+        $vadSln = "Virtual-Audio-Driver (Latest Stable)/VirtualAudioDriver.sln"
+        if (-not (Test-Path $vadSln)) { throw "VAD solution file not found at: $vadSln" }
+        msbuild $vadSln /p:Configuration=$env:BUILD_CONFIGURATION /p:Platform=x64 /verbosity:minimal /target:Build
+
+    - name: Checkout Virtual Driver Control Repository
+      uses: actions/checkout@v4
+      with:
+        repository: 'VirtualDrivers/Virtual-Driver-Control'
+        path: 'control-app-repo'
+        token: ${{ secrets.GITHUB_TOKEN }}
+      continue-on-error: true
+
+    - name: Control App Dependencies and Lint Check
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = "Stop"
+        $controlAppPath = ""
+
+        if (Test-Path "control-app-repo/VirtualDriverControl/package.json") {
+          $controlAppPath = "control-app-repo/VirtualDriverControl"
+          Write-Output "Found control app in separate repository"
+        }
+
+        if ($controlAppPath -eq "") {
+          Write-Output "⚠️  Control App not found - skipping validation"
+          exit 0
+        }
+
+        Push-Location $controlAppPath
+        npm ci
+
+        $packageJson = Get-Content "package.json" | ConvertFrom-Json
+        if ($packageJson.scripts.lint) {
+          npm run lint
+        } else {
+          Write-Output "No lint script found, skipping lint check"
+        }
+
+        Pop-Location
+
+    - name: CI Validation Summary
+      if: always()
+      shell: pwsh
+      run: |
+        Write-Output "=== Fast CI Validation Summary ==="
+        Write-Output "Configuration: $env:BUILD_CONFIGURATION"
+        Write-Output "Event: ${{ github.event_name }}"
+        Write-Output "Branch: ${{ github.ref }}"
+        Write-Output "Commit: ${{ github.sha }}"
+
