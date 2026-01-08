@@ -5,6 +5,7 @@
 #include <algorithm>    	// For sort
 #include <setupapi.h>
 #include <devguid.h>
+#include <devpropdef.h>
 #include <devpkey.h>
 #include <cstdint>
 #include <optional>
@@ -14,6 +15,13 @@
 
 using namespace std;
 using namespace Microsoft::WRL;
+
+// DEVPKEY_Device_Luid: {60b193cb-5276-4d0f-96fc-f173ab17af69}, 2
+// Define it ourselves to avoid SDK/WDK header differences where DEVPKEY_Device_Luid may not be declared.
+static const DEVPROPKEY DEVPKEY_Device_Luid_Custom = {
+    { 0x60b193cb, 0x5276, 0x4d0f, { 0x96, 0xfc, 0xf1, 0x73, 0xab, 0xad, 0x3e, 0xc6 } },
+    2
+};
 
 // Structure to vector gpus
 struct GPUInfo {
@@ -95,7 +103,7 @@ inline std::optional<LUID> ResolveAdapterLuidFromPciBus(uint32_t targetBusIndex)
         if (!SetupDiGetDevicePropertyW(
                 devInfo,
                 &devData,
-                &DEVPKEY_Device_Luid,
+                &DEVPKEY_Device_Luid_Custom,
                 &propType,
                 reinterpret_cast<PBYTE>(&luid64),
                 sizeof(luid64),
