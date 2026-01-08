@@ -48,25 +48,55 @@ jobs:
         choco install visualstudio2022-workload-vctools -y
         if ($LASTEXITCODE -ne 0) { exit 1 }
         
-        choco install windowsdriverkit11 -y
-        if ($LASTEXITCODE -ne 0) { exit 1 }
-        
         choco install innosetup -y
         if ($LASTEXITCODE -ne 0) { exit 1 }
+
+    - name: Install Windows SDK + WDK (required for WDF/UMDF headers)
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = "Stop"
+
+        function Ensure-WingetPackage([string]$Id) {
+          Write-Output "Checking $Id..."
+          $listed = (winget list --id $Id -e | Out-String)
+          if ($listed -match [regex]::Escape($Id)) {
+            Write-Output "✅ $Id already installed"
+            return
+          }
+
+          Write-Output "Installing $Id via winget..."
+          winget install --source winget --exact --id $Id --accept-package-agreements --accept-source-agreements --silent
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "❌ winget install failed for $Id (exit code $LASTEXITCODE)"
+            exit $LASTEXITCODE
+          }
+          Write-Output "✅ Installed $Id"
+        }
+
+        winget --version
+
+        # Install matching SDK + WDK (per Microsoft guidance).
+        # Update these IDs if you intentionally move to another kit version.
+        Ensure-WingetPackage "Microsoft.WindowsSDK.10.0.26100"
+        Ensure-WingetPackage "Microsoft.WindowsWDK.10.0.26100"
 
     - name: Detect Windows Kits version (WDF/UMDF headers)
       shell: pwsh
       run: |
-        $kitsRoot = Join-Path ${env:ProgramFiles(x86)} "Windows Kits"
-        if (-not (Test-Path $kitsRoot)) {
+        $kitsRoot = $null
+        try {
+          $kitsRoot = (Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows Kits\Installed Roots" -Name "KitsRoot10" -ErrorAction Stop).KitsRoot10
+        } catch {
+          $kitsRoot = Join-Path ${env:ProgramFiles(x86)} "Windows Kits\10\"
+        }
+
+        if (-not $kitsRoot -or -not (Test-Path $kitsRoot)) {
           Write-Error "Windows Kits root not found: $kitsRoot"
           exit 1
         }
 
         $includeRoots =
-          Get-ChildItem -Path $kitsRoot -Directory |
-          ForEach-Object { Join-Path $_.FullName "Include" } |
-          Where-Object { Test-Path $_ }
+          @((Join-Path $kitsRoot "Include")) | Where-Object { Test-Path $_ }
 
         if (-not $includeRoots -or $includeRoots.Count -eq 0) {
           Write-Error "No Windows Kits Include directories found under: $kitsRoot"
