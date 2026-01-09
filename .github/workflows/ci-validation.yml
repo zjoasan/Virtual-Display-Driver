@@ -44,18 +44,37 @@ jobs:
           $includeRoot = Join-Path $kitsRoot "Include"
           if (-not (Test-Path $includeRoot)) { return $null }
 
-          $best =
+          # Some runners lay WDK headers out as:
+          #   Include\wdf\umdf\wudfwdm.h
+          # Others as:
+          #   Include\<version>\wdf\umdf\wudfwdm.h
+          $flatHeader = Join-Path $includeRoot "wdf\umdf\wudfwdm.h"
+
+          $versionDirs =
             Get-ChildItem -Path $includeRoot -Directory -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -match '^\d+\.\d+\.\d+\.\d+$' } |
+            Sort-Object -Property Name -Descending
+
+          $bestVersion = $versionDirs | Select-Object -First 1
+          $bestWithHeader =
+            $versionDirs |
             Where-Object { Test-Path (Join-Path $_.FullName "wdf\umdf\wudfwdm.h") } |
-            Sort-Object -Property Name -Descending |
             Select-Object -First 1
 
-          if (-not $best) { return $null }
+          if (Test-Path $flatHeader) {
+            return [PSCustomObject]@{
+              WindowsSdkDir = $kitsRoot
+              WindowsTargetPlatformVersion = $bestVersion.Name
+              HeaderPath = $flatHeader
+            }
+          }
+
+          if (-not $bestWithHeader) { return $null }
 
           return [PSCustomObject]@{
             WindowsSdkDir = $kitsRoot
-            WindowsTargetPlatformVersion = $best.Name
-            HeaderPath = (Join-Path $best.FullName "wdf\umdf\wudfwdm.h")
+            WindowsTargetPlatformVersion = $bestWithHeader.Name
+            HeaderPath = (Join-Path $bestWithHeader.FullName "wdf\umdf\wudfwdm.h")
           }
         }
 
