@@ -27,51 +27,82 @@ jobs:
     - name: Setup MSBuild
       uses: microsoft/setup-msbuild@v2
 
-    - name: Install Windows Driver Kit (WDK)
-      shell: pwsh
-      run: |
-        $ErrorActionPreference = "Stop"
-        choco install windowsdriverkit11 -y --no-progress
-        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-    - name: Detect Windows Kits version (UMDF headers)
+    - name: Ensure UMDF headers (wudfwdm.h) are available
       shell: pwsh
       run: |
         $ErrorActionPreference = "Stop"
 
-        $kitsRoot = $null
-        try {
-          $kitsRoot = (Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows Kits\Installed Roots" -Name "KitsRoot10" -ErrorAction Stop).KitsRoot10
-        } catch {
-          $kitsRoot = Join-Path ${env:ProgramFiles(x86)} "Windows Kits\10\"
+        function Get-KitsRoot10 {
+          try {
+            return (Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows Kits\Installed Roots" -Name "KitsRoot10" -ErrorAction Stop).KitsRoot10
+          } catch {
+            return (Join-Path ${env:ProgramFiles(x86)} "Windows Kits\10\")
+          }
         }
 
-        if (-not $kitsRoot -or -not (Test-Path $kitsRoot)) {
-          throw "Windows Kits root not found: $kitsRoot"
+        function Find-UmdfHeader([string]$kitsRoot) {
+          $includeRoot = Join-Path $kitsRoot "Include"
+          if (-not (Test-Path $includeRoot)) { return $null }
+
+          $best =
+            Get-ChildItem -Path $includeRoot -Directory -ErrorAction SilentlyContinue |
+            Where-Object { Test-Path (Join-Path $_.FullName "wdf\umdf\wudfwdm.h") } |
+            Sort-Object -Property Name -Descending |
+            Select-Object -First 1
+
+          if (-not $best) { return $null }
+
+          return [PSCustomObject]@{
+            WindowsSdkDir = $kitsRoot
+            WindowsTargetPlatformVersion = $best.Name
+            HeaderPath = (Join-Path $best.FullName "wdf\umdf\wudfwdm.h")
+          }
         }
 
-        $includeRoot = Join-Path $kitsRoot "Include"
-        if (-not (Test-Path $includeRoot)) {
-          throw "Windows Kits Include directory not found: $includeRoot"
+        $kitsRoot = Get-KitsRoot10
+        Write-Output "KitsRoot10: $kitsRoot"
+
+        $found = Find-UmdfHeader -kitsRoot $kitsRoot
+        if (-not $found) {
+          Write-Output "UMDF header not found; installing SDK + WDK via winget..."
+
+          if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
+            throw "winget is not available on this runner, and UMDF headers are missing."
+          }
+
+          winget --version
+
+          $ids = @(
+            "Microsoft.WindowsSDK.10.0.26100",
+            "Microsoft.WindowsWDK.10.0.26100"
+          )
+
+          foreach ($id in $ids) {
+            Write-Output "Installing $id ..."
+            winget install --source winget --exact --id $id --accept-package-agreements --accept-source-agreements --silent --disable-interactivity
+            if ($LASTEXITCODE -ne 0) {
+              throw "winget install failed for $id (exit code $LASTEXITCODE)"
+            }
+          }
+
+          $found = Find-UmdfHeader -kitsRoot $kitsRoot
         }
 
-        $candidates =
-          Get-ChildItem -Path $includeRoot -Directory -ErrorAction SilentlyContinue |
-          Where-Object { Test-Path (Join-Path $_.FullName "wdf\umdf\wudfwdm.h") } |
-          Sort-Object -Property Name -Descending
-
-        $best = $candidates | Select-Object -First 1
-        if (-not $best) {
+        if (-not $found) {
+          $includeRoot = Join-Path $kitsRoot "Include"
+          Write-Output "Still missing UMDF header. Include root contents:"
+          if (Test-Path $includeRoot) {
+            Get-ChildItem -Path $includeRoot -Directory -ErrorAction SilentlyContinue | ForEach-Object { Write-Output ("- " + $_.Name) }
+          }
           throw "Could not find wdf\\umdf\\wudfwdm.h under: $includeRoot"
         }
 
-        $kitVersion = $best.Name
-        $windowsSdkDir = $kitsRoot
+        Write-Output "Found UMDF header at: $($found.HeaderPath)"
+        Write-Output "Using WindowsTargetPlatformVersion: $($found.WindowsTargetPlatformVersion)"
+        Write-Output "Using WindowsSdkDir: $($found.WindowsSdkDir)"
 
-        Write-Output "Using WindowsTargetPlatformVersion: $kitVersion"
-        Write-Output "Using WindowsSdkDir: $windowsSdkDir"
-        "WINDOWS_TARGET_PLATFORM_VERSION=$kitVersion" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-        "WINDOWS_SDK_DIR=$windowsSdkDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        "WINDOWS_TARGET_PLATFORM_VERSION=$($found.WindowsTargetPlatformVersion)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        "WINDOWS_SDK_DIR=$($found.WindowsSdkDir)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
     - name: Setup Node.js
       uses: actions/setup-node@v4
