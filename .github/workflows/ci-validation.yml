@@ -27,6 +27,13 @@ jobs:
     - name: Setup MSBuild
       uses: microsoft/setup-msbuild@v2
 
+    - name: Install Windows Driver Kit (for IddCx headers)
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = "Stop"
+        choco install windowsdriverkit11 -y --no-progress
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
     - name: Detect Windows SDK (windows.h)
       shell: pwsh
       run: |
