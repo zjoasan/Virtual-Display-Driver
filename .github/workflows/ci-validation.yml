@@ -34,6 +34,45 @@ jobs:
         choco install windowsdriverkit11 -y --no-progress
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+    - name: Detect Windows Kits version (UMDF headers)
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = "Stop"
+
+        $kitsRoot = $null
+        try {
+          $kitsRoot = (Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows Kits\Installed Roots" -Name "KitsRoot10" -ErrorAction Stop).KitsRoot10
+        } catch {
+          $kitsRoot = Join-Path ${env:ProgramFiles(x86)} "Windows Kits\10\"
+        }
+
+        if (-not $kitsRoot -or -not (Test-Path $kitsRoot)) {
+          throw "Windows Kits root not found: $kitsRoot"
+        }
+
+        $includeRoot = Join-Path $kitsRoot "Include"
+        if (-not (Test-Path $includeRoot)) {
+          throw "Windows Kits Include directory not found: $includeRoot"
+        }
+
+        $candidates =
+          Get-ChildItem -Path $includeRoot -Directory -ErrorAction SilentlyContinue |
+          Where-Object { Test-Path (Join-Path $_.FullName "wdf\umdf\wudfwdm.h") } |
+          Sort-Object -Property Name -Descending
+
+        $best = $candidates | Select-Object -First 1
+        if (-not $best) {
+          throw "Could not find wdf\\umdf\\wudfwdm.h under: $includeRoot"
+        }
+
+        $kitVersion = $best.Name
+        $windowsSdkDir = $kitsRoot
+
+        Write-Output "Using WindowsTargetPlatformVersion: $kitVersion"
+        Write-Output "Using WindowsSdkDir: $windowsSdkDir"
+        "WINDOWS_TARGET_PLATFORM_VERSION=$kitVersion" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        "WINDOWS_SDK_DIR=$windowsSdkDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
@@ -51,7 +90,7 @@ jobs:
         Write-Output "Performing quick VDD compilation check..."
         $vddSln = "Virtual Display Driver (HDR)/MTTVDD.sln"
         if (-not (Test-Path $vddSln)) { throw "VDD solution file not found at: $vddSln" }
-        msbuild $vddSln /p:Configuration=$env:BUILD_CONFIGURATION /p:Platform=x64 /verbosity:minimal /target:Build
+        msbuild $vddSln /p:Configuration=$env:BUILD_CONFIGURATION /p:Platform=x64 /p:WindowsSdkDir=$env:WINDOWS_SDK_DIR /p:WindowsTargetPlatformVersion=$env:WINDOWS_TARGET_PLATFORM_VERSION /verbosity:minimal /target:Build
 
     - name: Quick VAD Compilation Check
       shell: pwsh
@@ -60,7 +99,7 @@ jobs:
         Write-Output "Performing quick VAD compilation check..."
         $vadSln = "Virtual-Audio-Driver (Latest Stable)/VirtualAudioDriver.sln"
         if (-not (Test-Path $vadSln)) { throw "VAD solution file not found at: $vadSln" }
-        msbuild $vadSln /p:Configuration=$env:BUILD_CONFIGURATION /p:Platform=x64 /verbosity:minimal /target:Build
+        msbuild $vadSln /p:Configuration=$env:BUILD_CONFIGURATION /p:Platform=x64 /p:WindowsSdkDir=$env:WINDOWS_SDK_DIR /p:WindowsTargetPlatformVersion=$env:WINDOWS_TARGET_PLATFORM_VERSION /verbosity:minimal /target:Build
 
     - name: Checkout Virtual Driver Control Repository
       uses: actions/checkout@v4

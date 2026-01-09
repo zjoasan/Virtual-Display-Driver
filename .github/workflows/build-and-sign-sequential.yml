@@ -47,6 +47,45 @@ jobs:
         Write-Output "Ensuring Windows Driver Kit is installed (Chocolatey: windowsdriverkit11)..."
         choco install windowsdriverkit11 -y --no-progress
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+    - name: Detect Windows Kits version (UMDF headers)
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = "Stop"
+
+        $kitsRoot = $null
+        try {
+          $kitsRoot = (Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows Kits\Installed Roots" -Name "KitsRoot10" -ErrorAction Stop).KitsRoot10
+        } catch {
+          $kitsRoot = Join-Path ${env:ProgramFiles(x86)} "Windows Kits\10\"
+        }
+
+        if (-not $kitsRoot -or -not (Test-Path $kitsRoot)) {
+          throw "Windows Kits root not found: $kitsRoot"
+        }
+
+        $includeRoot = Join-Path $kitsRoot "Include"
+        if (-not (Test-Path $includeRoot)) {
+          throw "Windows Kits Include directory not found: $includeRoot"
+        }
+
+        $candidates =
+          Get-ChildItem -Path $includeRoot -Directory -ErrorAction SilentlyContinue |
+          Where-Object { Test-Path (Join-Path $_.FullName "wdf\umdf\wudfwdm.h") } |
+          Sort-Object -Property Name -Descending
+
+        $best = $candidates | Select-Object -First 1
+        if (-not $best) {
+          throw "Could not find wdf\\umdf\\wudfwdm.h under: $includeRoot"
+        }
+
+        $kitVersion = $best.Name
+        $windowsSdkDir = $kitsRoot
+
+        Write-Output "Using WindowsTargetPlatformVersion: $kitVersion"
+        Write-Output "Using WindowsSdkDir: $windowsSdkDir"
+        "WINDOWS_TARGET_PLATFORM_VERSION=$kitVersion" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        "WINDOWS_SDK_DIR=$windowsSdkDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
         
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
@@ -65,7 +104,7 @@ jobs:
         $vddSln = "Virtual Display Driver (HDR)/MTTVDD.sln"
         if (Test-Path $vddSln) {
           Write-Output "Found VDD solution: $vddSln"
-          msbuild $vddSln /p:Configuration=$env:BUILD_CONFIGURATION /p:Platform=ARM64 /verbosity:minimal
+          msbuild $vddSln /p:Configuration=$env:BUILD_CONFIGURATION /p:Platform=ARM64 /p:WindowsSdkDir=$env:WINDOWS_SDK_DIR /p:WindowsTargetPlatformVersion=$env:WINDOWS_TARGET_PLATFORM_VERSION /verbosity:minimal
           if ($LASTEXITCODE -eq 0) {
             Write-Output "✅ ARM64 VDD build completed successfully"
             
@@ -99,7 +138,7 @@ jobs:
           Write-Output "Building ARM64 VAD with validation disabled..."
           
           # Build with validation disabled to avoid x86 tool conflicts with ARM64 outputs
-          msbuild $vadSln /p:Configuration=$env:BUILD_CONFIGURATION /p:Platform=ARM64 /p:EnableInfVerif=false /p:RunApiValidator=false /verbosity:minimal
+          msbuild $vadSln /p:Configuration=$env:BUILD_CONFIGURATION /p:Platform=ARM64 /p:WindowsSdkDir=$env:WINDOWS_SDK_DIR /p:WindowsTargetPlatformVersion=$env:WINDOWS_TARGET_PLATFORM_VERSION /p:EnableInfVerif=false /p:RunApiValidator=false /verbosity:minimal
           
           if ($LASTEXITCODE -eq 0) {
             Write-Output "✅ ARM64 VAD build completed successfully!"
@@ -127,7 +166,7 @@ jobs:
         $vddSln = "Virtual Display Driver (HDR)/MTTVDD.sln"
         if (Test-Path $vddSln) {
           Write-Output "Found VDD solution: $vddSln"
-          msbuild $vddSln /p:Configuration=$env:BUILD_CONFIGURATION /p:Platform=x64 /verbosity:minimal
+          msbuild $vddSln /p:Configuration=$env:BUILD_CONFIGURATION /p:Platform=x64 /p:WindowsSdkDir=$env:WINDOWS_SDK_DIR /p:WindowsTargetPlatformVersion=$env:WINDOWS_TARGET_PLATFORM_VERSION /verbosity:minimal
           if ($LASTEXITCODE -eq 0) {
             Write-Output "✅ x64 VDD build completed successfully"
             
@@ -156,7 +195,7 @@ jobs:
         $vadSln = "Virtual-Audio-Driver (Latest Stable)/VirtualAudioDriver.sln"
         if (Test-Path $vadSln) {
           Write-Output "Found VAD solution: $vadSln"
-          msbuild $vadSln /p:Configuration=$env:BUILD_CONFIGURATION /p:Platform=x64 /verbosity:minimal
+          msbuild $vadSln /p:Configuration=$env:BUILD_CONFIGURATION /p:Platform=x64 /p:WindowsSdkDir=$env:WINDOWS_SDK_DIR /p:WindowsTargetPlatformVersion=$env:WINDOWS_TARGET_PLATFORM_VERSION /verbosity:minimal
           if ($LASTEXITCODE -eq 0) {
             Write-Output "✅ x64 VAD build completed successfully"
             
@@ -436,7 +475,7 @@ jobs:
         
     # STEP 8: Submit to SignPath
     - name: "Step 8: Submit to SignPath"
-      if: github.event.inputs.skip_signing != 'true' && secrets.SIGNPATH_API_TOKEN != '' && vars.SIGNPATH_ORG_ID != '' && vars.SIGNPATH_PROJECT_SLUG != '' && vars.SIGNPATH_POLICY_SLUG != '' && steps.upload_for_signpath.outputs.artifact-id != ''
+      if: github.event.inputs.skip_signing != 'true' && steps.upload_for_signpath.outputs.artifact-id != ''
       id: signpath_request
       uses: signpath/github-action-submit-signing-request@v1
       with:
