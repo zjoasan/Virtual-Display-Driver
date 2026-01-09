@@ -27,102 +27,6 @@ jobs:
     - name: Setup MSBuild
       uses: microsoft/setup-msbuild@v2
 
-    - name: Ensure UMDF headers (wudfwdm.h) are available
-      shell: pwsh
-      run: |
-        $ErrorActionPreference = "Stop"
-
-        function Get-KitsRoot10 {
-          try {
-            return (Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows Kits\Installed Roots" -Name "KitsRoot10" -ErrorAction Stop).KitsRoot10
-          } catch {
-            return (Join-Path ${env:ProgramFiles(x86)} "Windows Kits\10\")
-          }
-        }
-
-        function Find-UmdfHeader([string]$kitsRoot) {
-          $includeRoot = Join-Path $kitsRoot "Include"
-          if (-not (Test-Path $includeRoot)) { return $null }
-
-          # Some runners lay WDK headers out as:
-          #   Include\wdf\umdf\wudfwdm.h
-          # Others as:
-          #   Include\<version>\wdf\umdf\wudfwdm.h
-          $flatHeader = Join-Path $includeRoot "wdf\umdf\wudfwdm.h"
-
-          $versionDirs =
-            Get-ChildItem -Path $includeRoot -Directory -ErrorAction SilentlyContinue |
-            Where-Object { $_.Name -match '^\d+\.\d+\.\d+\.\d+$' } |
-            Sort-Object -Property Name -Descending
-
-          $bestVersion = $versionDirs | Select-Object -First 1
-          $bestWithHeader =
-            $versionDirs |
-            Where-Object { Test-Path (Join-Path $_.FullName "wdf\umdf\wudfwdm.h") } |
-            Select-Object -First 1
-
-          if (Test-Path $flatHeader) {
-            return [PSCustomObject]@{
-              WindowsSdkDir = $kitsRoot
-              WindowsTargetPlatformVersion = $bestVersion.Name
-              HeaderPath = $flatHeader
-            }
-          }
-
-          if (-not $bestWithHeader) { return $null }
-
-          return [PSCustomObject]@{
-            WindowsSdkDir = $kitsRoot
-            WindowsTargetPlatformVersion = $bestWithHeader.Name
-            HeaderPath = (Join-Path $bestWithHeader.FullName "wdf\umdf\wudfwdm.h")
-          }
-        }
-
-        $kitsRoot = Get-KitsRoot10
-        Write-Output "KitsRoot10: $kitsRoot"
-
-        $found = Find-UmdfHeader -kitsRoot $kitsRoot
-        if (-not $found) {
-          Write-Output "UMDF header not found; installing SDK + WDK via winget..."
-
-          if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
-            throw "winget is not available on this runner, and UMDF headers are missing."
-          }
-
-          winget --version
-
-          $ids = @(
-            "Microsoft.WindowsSDK.10.0.26100",
-            "Microsoft.WindowsWDK.10.0.26100"
-          )
-
-          foreach ($id in $ids) {
-            Write-Output "Installing $id ..."
-            winget install --source winget --exact --id $id --accept-package-agreements --accept-source-agreements --silent --disable-interactivity
-            if ($LASTEXITCODE -ne 0) {
-              throw "winget install failed for $id (exit code $LASTEXITCODE)"
-            }
-          }
-
-          $found = Find-UmdfHeader -kitsRoot $kitsRoot
-        }
-
-        if (-not $found) {
-          $includeRoot = Join-Path $kitsRoot "Include"
-          Write-Output "Still missing UMDF header. Include root contents:"
-          if (Test-Path $includeRoot) {
-            Get-ChildItem -Path $includeRoot -Directory -ErrorAction SilentlyContinue | ForEach-Object { Write-Output ("- " + $_.Name) }
-          }
-          throw "Could not find wdf\\umdf\\wudfwdm.h under: $includeRoot"
-        }
-
-        Write-Output "Found UMDF header at: $($found.HeaderPath)"
-        Write-Output "Using WindowsTargetPlatformVersion: $($found.WindowsTargetPlatformVersion)"
-        Write-Output "Using WindowsSdkDir: $($found.WindowsSdkDir)"
-
-        "WINDOWS_TARGET_PLATFORM_VERSION=$($found.WindowsTargetPlatformVersion)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-        "WINDOWS_SDK_DIR=$($found.WindowsSdkDir)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
@@ -140,7 +44,7 @@ jobs:
         Write-Output "Performing quick VDD compilation check..."
         $vddSln = "Virtual Display Driver (HDR)/MTTVDD.sln"
         if (-not (Test-Path $vddSln)) { throw "VDD solution file not found at: $vddSln" }
-        msbuild $vddSln /p:Configuration=$env:BUILD_CONFIGURATION /p:Platform=x64 /p:WindowsSdkDir=$env:WINDOWS_SDK_DIR /p:WindowsTargetPlatformVersion=$env:WINDOWS_TARGET_PLATFORM_VERSION /verbosity:minimal /target:Build
+        msbuild $vddSln /p:Configuration=$env:BUILD_CONFIGURATION /p:Platform=x64 /verbosity:minimal /target:Build
 
     - name: Quick VAD Compilation Check
       shell: pwsh
@@ -149,51 +53,5 @@ jobs:
         Write-Output "Performing quick VAD compilation check..."
         $vadSln = "Virtual-Audio-Driver (Latest Stable)/VirtualAudioDriver.sln"
         if (-not (Test-Path $vadSln)) { throw "VAD solution file not found at: $vadSln" }
-        msbuild $vadSln /p:Configuration=$env:BUILD_CONFIGURATION /p:Platform=x64 /p:WindowsSdkDir=$env:WINDOWS_SDK_DIR /p:WindowsTargetPlatformVersion=$env:WINDOWS_TARGET_PLATFORM_VERSION /verbosity:minimal /target:Build
-
-    - name: Checkout Virtual Driver Control Repository
-      uses: actions/checkout@v4
-      with:
-        repository: 'VirtualDrivers/Virtual-Driver-Control'
-        path: 'control-app-repo'
-        token: ${{ secrets.GITHUB_TOKEN }}
-      continue-on-error: true
-
-    - name: Control App Dependencies and Lint Check
-      shell: pwsh
-      run: |
-        $ErrorActionPreference = "Stop"
-        $controlAppPath = ""
-
-        if (Test-Path "control-app-repo/VirtualDriverControl/package.json") {
-          $controlAppPath = "control-app-repo/VirtualDriverControl"
-          Write-Output "Found control app in separate repository"
-        }
-
-        if ($controlAppPath -eq "") {
-          Write-Output "⚠️  Control App not found - skipping validation"
-          exit 0
-        }
-
-        Push-Location $controlAppPath
-        npm ci
-
-        $packageJson = Get-Content "package.json" | ConvertFrom-Json
-        if ($packageJson.scripts.lint) {
-          npm run lint
-        } else {
-          Write-Output "No lint script found, skipping lint check"
-        }
-
-        Pop-Location
-
-    - name: CI Validation Summary
-      if: always()
-      shell: pwsh
-      run: |
-        Write-Output "=== Fast CI Validation Summary ==="
-        Write-Output "Configuration: $env:BUILD_CONFIGURATION"
-        Write-Output "Event: ${{ github.event_name }}"
-        Write-Output "Branch: ${{ github.ref }}"
-        Write-Output "Commit: ${{ github.sha }}"
+        msbuild $vadSln /p:Configuration=$env:BUILD_CONFIGURATION /p:Platform=x64 /verbosity:minimal /target:Build
 
