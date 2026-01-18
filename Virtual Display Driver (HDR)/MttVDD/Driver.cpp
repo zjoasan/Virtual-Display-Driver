@@ -115,6 +115,24 @@ IDDCX_BITS_PER_COMPONENT HDRCOLOUR = IDDCX_BITS_PER_COMPONENT_10;
 
 wstring ColourFormat = L"RGB";
 
+// --- SHADER SUPPORT VARIABLES ---
+// Global shader bytecode storage
+std::vector<BYTE> g_VertexShaderBytecode;
+std::vector<BYTE> g_PixelShaderBytecode;
+wstring g_ShaderHeaderPath = L"";
+bool g_ShaderEnabled = false;
+
+// --- MULTI-GPU SHADER RENDERING VARIABLES ---
+// Enable iGPU for shader processing while displaying on selected dGPU
+bool g_UseiGPUForShaders = false;  // Configurable via pipe/XML
+// LUID g_iGPULuid = {};  // iGPU LUID for shader processing
+// std::shared_ptr<Direct3DDevice> g_iGPUDevice = nullptr;  // iGPU Direct3DDevice for shaders
+// Microsoft::WRL::ComPtr<ID3D11Texture2D> g_StagingTexture = nullptr;  // Cross-adapter staging texture
+// Microsoft::WRL::ComPtr<ID3D11RenderTargetView> g_iGPURenderTarget = nullptr;  // iGPU render target for shader output
+// --- END MULTI-GPU SHADER RENDERING VARIABLES ---
+
+// --- END SHADER SUPPORT VARIABLES ---
+
 // === EDID INTEGRATION SETTINGS ===
 bool edidIntegrationEnabled = false;
 bool autoConfigureFromEdid = false;
@@ -195,6 +213,10 @@ std::map<std::wstring, std::pair<std::wstring, std::wstring>> SettingsQueryMap =
 	{L"SDR10Enabled", {L"SDR10BIT", L"SDR10bit"}},
 	{L"ColourFormat", {L"COLOURFORMAT", L"ColourFormat"}},
 	//Colour End
+	
+	//Shaders Begin
+	{L"ShaderRendererEnabled", {L"SHADERRENDERER", L"shader_renderer"}},
+	//Shaders End
 	
 	//EDID Integration Begin
 	{L"EdidIntegrationEnabled", {L"EDIDINTEGRATION", L"enabled"}},
@@ -2057,6 +2079,180 @@ void ReloadDriver(HANDLE hPipe) {
 	}
 }
 
+// --- SHADER LOADING FUNCTION ---
+// LoadShaderFromHeader() - Parses C-header format shader file and extracts bytecode
+// 
+// Expected format:
+//   const int ShaderName_VS_size = <size>;
+//   const BYTE ShaderName_VS[size] = {0x44, 0x58, ...};
+//   const int ShaderName_PS_size = <size>;
+//   const BYTE ShaderName_PS[size] = {0x44, 0x58, ...};
+//
+// bool LoadShaderFromHeader(const wstring& headerPath)
+// {
+//     vddlog("i", ("Loading shader from: " + WStringToString(headerPath)).c_str());
+//     
+//     // Convert wide string path to string for file operations
+//     string narrowPath = WStringToString(headerPath);
+//     ifstream file(narrowPath, ios::in | ios::binary);
+//     
+//     if (!file.is_open()) {
+//         vddlog("e", ("Failed to open shader header file: " + narrowPath).c_str());
+//         g_ShaderEnabled = false;
+//         return false;
+//     }
+//     
+//     // Clear existing shader bytecode
+//     g_VertexShaderBytecode.clear();
+//     g_PixelShaderBytecode.clear();
+//     
+//     // Read entire file into string for parsing
+//     stringstream fileContent;
+//     fileContent << file.rdbuf();
+//     string content = fileContent.str();
+//     file.close();
+//     
+//     // Parse vertex shader size
+//     size_t vsSizePos = content.find("_VS_size");
+//     if (vsSizePos == string::npos) {
+//         vddlog("e", "Shader header missing vertex shader size declaration");
+//         g_ShaderEnabled = false;
+//         return false;
+//     }
+//     
+//     // Find size value (look for "= " followed by digits)
+//     size_t vsSizeStart = content.find("= ", vsSizePos) + 2;
+//     size_t vsSizeEnd = content.find_first_of(";}", vsSizeStart);
+//     if (vsSizeEnd == string::npos) {
+//         vddlog("e", "Invalid vertex shader size format");
+//         g_ShaderEnabled = false;
+//         return false;
+//     }
+//     int vsSize = stoi(content.substr(vsSizeStart, vsSizeEnd - vsSizeStart));
+//     
+//     // Parse vertex shader bytecode array
+//     size_t vsArrayPos = content.find("_VS[");
+//     if (vsArrayPos == string::npos) {
+//         vsArrayPos = content.find("_VS {");
+//     }
+//     if (vsArrayPos == string::npos) {
+//         vddlog("e", "Shader header missing vertex shader bytecode array");
+//         g_ShaderEnabled = false;
+//         return false;
+//     }
+//     
+//     size_t vsArrayStart = content.find("{", vsArrayPos) + 1;
+//     size_t vsArrayEnd = content.find("}", vsArrayStart);
+//     if (vsArrayEnd == string::npos) {
+//         vddlog("e", "Invalid vertex shader bytecode array format");
+//         g_ShaderEnabled = false;
+//         return false;
+//     }
+//     
+//     // Extract hex byte values from array (format: 0x44, 0x58, ...)
+//     string vsBytecodeStr = content.substr(vsArrayStart, vsArrayEnd - vsArrayStart);
+//     g_VertexShaderBytecode.reserve(vsSize);
+//     
+//     size_t hexStart = 0;
+//     while ((hexStart = vsBytecodeStr.find("0x", hexStart)) != string::npos) {
+//         size_t hexEnd = vsBytecodeStr.find_first_of(",}", hexStart + 2);
+//         string hexVal = vsBytecodeStr.substr(hexStart + 2, hexEnd - hexStart - 2);
+//         g_VertexShaderBytecode.push_back((BYTE)strtoul(hexVal.c_str(), nullptr, 16));
+//         hexStart = hexEnd;
+//     }
+//     
+//     if (g_VertexShaderBytecode.size() != vsSize) {
+//         vddlog("w", ("Vertex shader bytecode size mismatch. Expected: " + to_string(vsSize) + 
+//                      ", Parsed: " + to_string(g_VertexShaderBytecode.size())).c_str());
+//     }
+//     
+//     // Parse pixel shader size
+//     size_t psSizePos = content.find("_PS_size");
+//     if (psSizePos == string::npos) {
+//         vddlog("e", "Shader header missing pixel shader size declaration");
+//         g_ShaderEnabled = false;
+//         return false;
+//     }
+//     
+//     size_t psSizeStart = content.find("= ", psSizePos) + 2;
+//     size_t psSizeEnd = content.find_first_of(";}", psSizeStart);
+//     if (psSizeEnd == string::npos) {
+//         vddlog("e", "Invalid pixel shader size format");
+//         g_ShaderEnabled = false;
+//         return false;
+//     }
+//     int psSize = stoi(content.substr(psSizeStart, psSizeEnd - psSizeStart));
+//     
+//     // Parse pixel shader bytecode array
+//     size_t psArrayPos = content.find("_PS[");
+//     if (psArrayPos == string::npos) {
+//         psArrayPos = content.find("_PS {");
+//     }
+//     if (psArrayPos == string::npos) {
+//         vddlog("e", "Shader header missing pixel shader bytecode array");
+//         g_ShaderEnabled = false;
+//         return false;
+//     }
+//     
+//     size_t psArrayStart = content.find("{", psArrayPos) + 1;
+//     size_t psArrayEnd = content.find("}", psArrayStart);
+//     if (psArrayEnd == string::npos) {
+//         vddlog("e", "Invalid pixel shader bytecode array format");
+//         g_ShaderEnabled = false;
+//         return false;
+//     }
+//     
+//     // Extract hex byte values from pixel shader array
+//     string psBytecodeStr = content.substr(psArrayStart, psArrayEnd - psArrayStart);
+//     g_PixelShaderBytecode.reserve(psSize);
+//     
+//     hexStart = 0;
+//     while ((hexStart = psBytecodeStr.find("0x", hexStart)) != string::npos) {
+//         size_t hexEnd = psBytecodeStr.find_first_of(",}", hexStart + 2);
+//         string hexVal = psBytecodeStr.substr(hexStart + 2, hexEnd - hexStart - 2);
+//         g_PixelShaderBytecode.push_back((BYTE)strtoul(hexVal.c_str(), nullptr, 16));
+//         hexStart = hexEnd;
+//     }
+//     
+//     if (g_PixelShaderBytecode.size() != psSize) {
+//         vddlog("w", ("Pixel shader bytecode size mismatch. Expected: " + to_string(psSize) + 
+//                      ", Parsed: " + to_string(g_PixelShaderBytecode.size())).c_str());
+//     }
+//     
+//     // Validate shader bytecode (DXBC format starts with "DXBC")
+//     if (g_VertexShaderBytecode.size() >= 4) {
+//         if (g_VertexShaderBytecode[0] == 0x44 && g_VertexShaderBytecode[1] == 0x58 && 
+//             g_VertexShaderBytecode[2] == 0x42 && g_VertexShaderBytecode[3] == 0x43) {
+//             vddlog("i", "Vertex shader bytecode validated (DXBC format)");
+//         } else {
+//             vddlog("w", "Vertex shader bytecode may not be valid DXBC format");
+//         }
+//     }
+//     
+//     if (g_PixelShaderBytecode.size() >= 4) {
+//         if (g_PixelShaderBytecode[0] == 0x44 && g_PixelShaderBytecode[1] == 0x58 && 
+//             g_PixelShaderBytecode[2] == 0x42 && g_PixelShaderBytecode[3] == 0x43) {
+//             vddlog("i", "Pixel shader bytecode validated (DXBC format)");
+//         } else {
+//             vddlog("w", "Pixel shader bytecode may not be valid DXBC format");
+//         }
+//     }
+//     
+//     // Store path and enable shaders if both loaded successfully
+//     if (!g_VertexShaderBytecode.empty() && !g_PixelShaderBytecode.empty()) {
+//         g_ShaderHeaderPath = headerPath;
+//         g_ShaderEnabled = true;
+//         vddlog("i", ("Shader loaded successfully. VS size: " + to_string(g_VertexShaderBytecode.size()) + 
+//                      ", PS size: " + to_string(g_PixelShaderBytecode.size())).c_str());
+//         return true;
+//     } else {
+//         vddlog("e", "Failed to load shader bytecode - one or both arrays are empty");
+//         g_ShaderEnabled = false;
+//         return false;
+//     }
+// }
+// --- END SHADER LOADING FUNCTION ---
+
 
 void HandleClient(HANDLE hPipe) {
 	g_pipeHandle = hPipe;
@@ -2253,6 +2449,47 @@ void HandleClient(HANDLE hPipe) {
 			SendToPipe("PONG");
 			vddlog("p", "Heartbeat Ping");
 		}
+		// --- LOAD_SHADER PIPE COMMAND HANDLER ---
+		// Loads shader from C-header format file and triggers driver reload
+		// Command format: LOAD_SHADER <path_to_shader_header.h>
+		// Example: LOAD_SHADER C:\VirtualDisplayDriver\shaders\crt_shader.h
+		//
+		// else if (wcsncmp(buffer, L"LOAD_SHADER", 11) == 0) {
+		//     vddlog("c", "Loading shader from header file");
+		//     
+		//     // Extract shader file path (skip command name + space)
+		//     wstring shaderPath = buffer + 12; // Skip "LOAD_SHADER "
+		//     
+		//     // Remove quotes if present
+		//     if (shaderPath.front() == L'"') {
+		//         shaderPath = shaderPath.substr(1);
+		//     }
+		//     if (shaderPath.back() == L'"') {
+		//         shaderPath = shaderPath.substr(0, shaderPath.length() - 1);
+		//     }
+		//     
+		//     // Validate path is not empty
+		//     if (shaderPath.empty()) {
+		//         vddlog("e", "LOAD_SHADER command missing file path");
+		//         SendToPipe("ERROR: Missing shader file path");
+		//     } else {
+		//         // Load shader from header file
+		//         if (LoadShaderFromHeader(shaderPath)) {
+		//             vddlog("c", "Shader loaded successfully, reloading driver");
+		//             SendToPipe("Shader loaded successfully");
+		//             
+		//             // Optional: Save shader path to XML config for persistence
+		//             // UpdateXmlShaderPathSetting(shaderPath.c_str());
+		//             
+		//             // Reload driver to apply shaders
+		//             ReloadDriver(hPipe);
+		//         } else {
+		//             vddlog("e", "Failed to load shader from header file");
+		//             SendToPipe("ERROR: Failed to load shader");
+		//         }
+		//     }
+		// }
+		// --- END LOAD_SHADER COMMAND HANDLER ---
 		else {
 			vddlog("e", "Unknown command");
 
@@ -2448,6 +2685,9 @@ extern "C" NTSTATUS DriverEntry(
 	else {
 		XorCursorSupportLevel = static_cast<IDDCX_XOR_CURSOR_SUPPORT>(xorCursorSupportLevelInt);
 	}
+
+	// === LOAD SHADER RENDERING SETTINGS ===
+	g_UseiGPUForShaders = EnabledQuery(L"ShaderRendererEnabled");
 
 	// === LOAD NEW EDID INTEGRATION SETTINGS ===
 	edidIntegrationEnabled = EnabledQuery(L"EdidIntegrationEnabled");
@@ -3072,6 +3312,75 @@ HRESULT Direct3DDevice::Init()
 	logStream << "Direct3D device created successfully. Feature Level: " << featureLevel;
 	vddlog("i", logStream.str().c_str());
 
+	// --- SHADER COMPILATION ---
+	// Create vertex and pixel shaders from loaded bytecode (if available)
+	// This is called after device creation and reloads shaders on driver restart
+	//
+	// if (g_ShaderEnabled && !g_VertexShaderBytecode.empty() && !g_PixelShaderBytecode.empty()) {
+	//     logStream.str("");
+	//     logStream << "Compiling shaders from loaded bytecode. VS size: " << g_VertexShaderBytecode.size() 
+	//               << ", PS size: " << g_PixelShaderBytecode.size();
+	//     vddlog("i", logStream.str().c_str());
+	//     
+	//     // Create vertex shader
+	//     HRESULT vsHr = Device->CreateVertexShader(
+	//         g_VertexShaderBytecode.data(),
+	//         g_VertexShaderBytecode.size(),
+	//         nullptr,  // Class linkage (null for simple shaders)
+	//         &VertexShader);
+	//     
+	//     if (FAILED(vsHr)) {
+	//         logStream.str("");
+	//         logStream << "Failed to create vertex shader. HRESULT: " << vsHr;
+	//         vddlog("e", logStream.str().c_str());
+	//         // Continue without shaders - driver will work without them
+	//     } else {
+	//         vddlog("i", "Vertex shader created successfully");
+	//     }
+	//     
+	//     // Create pixel shader
+	//     HRESULT psHr = Device->CreatePixelShader(
+	//         g_PixelShaderBytecode.data(),
+	//         g_PixelShaderBytecode.size(),
+	//         nullptr,  // Class linkage (null for simple shaders)
+	//         &PixelShader);
+	//     
+	//     if (FAILED(psHr)) {
+	//         logStream.str("");
+	//         logStream << "Failed to create pixel shader. HRESULT: " << psHr;
+	//         vddlog("e", logStream.str().c_str());
+	//         // If pixel shader fails, clear vertex shader too for consistency
+	//         VertexShader.Reset();
+	//     } else {
+	//         vddlog("i", "Pixel shader created successfully");
+	//     }
+	//     
+	//     // Optional: Create constant buffer for shader parameters (PerFrameBuffer example)
+	//     // if (VertexShader && PixelShader) {
+	//     //     D3D11_BUFFER_DESC bufferDesc = {};
+	//     //     bufferDesc.Usage = D3D11_USAGE_DYNAMIC;
+	//     //     bufferDesc.ByteWidth = sizeof(PerFrameBuffer);
+	//     //     bufferDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+	//     //     bufferDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+	//     //     
+	//     //     HRESULT cbHr = Device->CreateBuffer(&bufferDesc, nullptr, &PerFrameBuffer);
+	//     //     if (FAILED(cbHr)) {
+	//     //         vddlog("w", "Failed to create shader constant buffer");
+	//     //     } else {
+	//     //         vddlog("i", "Shader constant buffer created");
+	//     //     }
+	//     // }
+	//     
+	//     if (VertexShader && PixelShader) {
+	//         vddlog("i", "Shaders compiled and ready for use");
+	//     } else {
+	//         vddlog("w", "Shader compilation incomplete - driver will run without shaders");
+	//     }
+	// } else if (!g_ShaderEnabled) {
+	//     vddlog("d", "No shaders loaded - driver running in passthrough mode");
+	// }
+	// --- END SHADER COMPILATION ---
+
 	return S_OK;
 }
 
@@ -3378,6 +3687,122 @@ void SwapChainProcessor::RunCore()
 			//  * a GPU VPBlt to another surface
 			//  * a GPU custom compute shader encode operation
 			// ==============================
+			
+			// --- SHADER APPLICATION ---
+			// Apply vertex and pixel shaders if loaded and compiled
+			// Shaders are set on the device context before frame processing
+			//
+			// if (m_Device && m_Device->DeviceContext && 
+			//     m_Device->VertexShader && m_Device->PixelShader) {
+			//     // Set vertex shader
+			//     ID3D11ClassInstance* ppClassInstances[1] = { nullptr };
+			//     UINT numClassInstances = 0;
+			//     m_Device->DeviceContext->VSSetShader(m_Device->VertexShader.Get(), ppClassInstances, numClassInstances);
+			//     
+			//     // Set pixel shader
+			//     m_Device->DeviceContext->PSSetShader(m_Device->PixelShader.Get(), ppClassInstances, numClassInstances);
+			//     
+			//     // Optional: Update and bind constant buffer (PerFrameBuffer example)
+			//     // if (m_Device->PerFrameBuffer) {
+			//     //     D3D11_MAPPED_SUBRESOURCE mappedResource;
+			//     //     HRESULT mapHr = m_Device->DeviceContext->Map(m_Device->PerFrameBuffer.Get(), 0, 
+			//     //                                                  D3D11_MAP_WRITE_DISCARD, 0, &mappedResource);
+			//     //     if (SUCCEEDED(mapHr)) {
+			//     //         PerFrameBuffer* buffer = (PerFrameBuffer*)mappedResource.pData;
+			//     //         // Set shader parameters (example: resolution, time, etc.)
+			//     //         // buffer->resolution = DirectX::XMFLOAT4(width, height, 0, 0);
+			//     //         // buffer->time = static_cast<float>(GetTickCount64()) / 1000.0f;
+			//     //         m_Device->DeviceContext->Unmap(m_Device->PerFrameBuffer.Get(), 0);
+			//     //         
+			//     //         // Bind constant buffer to vertex shader slot 0
+			//     //         ID3D11Buffer* pBuffers[1] = { m_Device->PerFrameBuffer.Get() };
+			//     //         m_Device->DeviceContext->VSSetConstantBuffers(0, 1, pBuffers);
+			//     //         m_Device->DeviceContext->PSSetConstantBuffers(0, 1, pBuffers);
+			//     //     }
+			//     // }
+			//     
+			//     // Note: In IddCx driver, we typically don't render a full scene with shaders
+			//     // The shaders would be applied if we're doing a fullscreen pass or post-processing
+			//     // For a virtual display, this may require additional setup (render targets, input layout, etc.)
+			//     // The actual shader usage depends on the specific rendering pipeline implementation
+			// }
+			// --- END SHADER APPLICATION ---
+
+			// --- MULTI-GPU SHADER RENDERING (iGPU for shaders, dGPU for display) ---
+			// Process shaders on iGPU while displaying on selected dGPU
+			// This requires cross-adapter resource copying and two Direct3D devices
+			//
+			// if (g_UseiGPUForShaders && g_iGPUDevice && m_Device) {
+			//     // Get the acquired surface (from dGPU swap chain)
+			//     ComPtr<ID3D11Resource> dGPUSurface;
+			//     AcquiredBuffer.As(&dGPUSurface);
+			//     
+			//     // Get surface description
+			//     ComPtr<ID3D11Texture2D> dGPUTexture;
+			//     dGPUSurface.As(&dGPUTexture);
+			//     D3D11_TEXTURE2D_DESC surfaceDesc;
+			//     dGPUTexture->GetDesc(&surfaceDesc);
+			//     
+			//     // Step 1: Copy dGPU surface to staging texture (CPU accessible)
+			//     // Create staging texture if not exists or size changed
+			//     if (!g_StagingTexture || surfaceDesc.Width != stagingWidth || surfaceDesc.Height != stagingHeight) {
+			//         g_StagingTexture.Reset();
+			//         D3D11_TEXTURE2D_DESC stagingDesc = surfaceDesc;
+			//         stagingDesc.Usage = D3D11_USAGE_STAGING;
+			//         stagingDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ | D3D11_CPU_ACCESS_WRITE;
+			//         stagingDesc.BindFlags = 0;
+			//         m_Device->Device->CreateTexture2D(&stagingDesc, nullptr, &g_StagingTexture);
+			//     }
+			//     
+			//     // Copy dGPU texture to staging
+			//     m_Device->DeviceContext->CopyResource(g_StagingTexture.Get(), dGPUTexture.Get());
+			//     
+			//     // Step 2: Map staging texture and create iGPU texture from data
+			//     // This requires CPU-side copying since D3D11 doesn't support cross-adapter direct copy
+			//     D3D11_MAPPED_SUBRESOURCE mapped;
+			//     HRESULT mapHr = m_Device->DeviceContext->Map(g_StagingTexture.Get(), 0, D3D11_MAP_READ, 0, &mapped);
+			//     
+			//     if (SUCCEEDED(mapHr)) {
+			//         // Create texture on iGPU with same format
+			//         ComPtr<ID3D11Texture2D> iGPUTexture;
+			//         D3D11_TEXTURE2D_DESC iGPUDesc = surfaceDesc;
+			//         iGPUDesc.Usage = D3D11_USAGE_DEFAULT;
+			//         iGPUDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
+			//         g_iGPUDevice->Device->CreateTexture2D(&iGPUDesc, nullptr, &iGPUTexture);
+			//         
+			//         // Copy data to iGPU texture via UpdateSubresource (requires staging on iGPU too)
+			//         // For better performance, use shared surfaces or D3D11On12 cross-adapter sharing
+			//         // This is a simplified approach - production should use more efficient methods
+			//         
+			//         // Create render target on iGPU for shader output
+			//         if (!g_iGPURenderTarget) {
+			//             ComPtr<ID3D11RenderTargetView> rtv;
+			//             D3D11_RENDER_TARGET_VIEW_DESC rtvDesc = {};
+			//             rtvDesc.Format = surfaceDesc.Format;
+			//             rtvDesc.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D;
+			//             g_iGPUDevice->Device->CreateRenderTargetView(iGPUTexture.Get(), &rtvDesc, &g_iGPURenderTarget);
+			//         }
+			//         
+			//         // Step 3: Apply shaders on iGPU
+			//         g_iGPUDevice->DeviceContext->OMSetRenderTargets(1, g_iGPURenderTarget.GetAddressOf(), nullptr);
+			//         // Set shaders, input layout, constant buffers, etc. on iGPU device context
+			//         // g_iGPUDevice->DeviceContext->VSSetShader(g_iGPUDevice->VertexShader.Get(), nullptr, 0);
+			//         // g_iGPUDevice->DeviceContext->PSSetShader(g_iGPUDevice->PixelShader.Get(), nullptr, 0);
+			//         // Render fullscreen quad with shaders applied
+			//         
+			//         // Step 4: Copy result back from iGPU to staging, then to dGPU
+			//         // Similar reverse process - copy iGPU render target to staging, then to dGPU surface
+			//         
+			//         m_Device->DeviceContext->Unmap(g_StagingTexture.Get(), 0);
+			//     }
+			//     
+			//     // Performance Note: Cross-adapter copying has significant overhead
+			//     // Consider using:
+			//     // - Shared surfaces (DXGI shared resources)
+			//     // - D3D12 cross-adapter support
+			//     // - Or accept performance cost for iGPU shader processing benefit
+			// }
+			// --- END MULTI-GPU SHADER RENDERING ---
 
 			AcquiredBuffer.Reset();
 			//vddlog("d", "Reset buffer");
@@ -3874,7 +4299,43 @@ void IndirectDeviceContext::AssignSwapChain(IDDCX_MONITOR& Monitor, IDDCX_SWAPCH
 		WdfObjectDelete(SwapChain);
 		return;
 	}
-	else
+	
+	// --- MULTI-GPU SHADER RENDERING: Initialize iGPU device if enabled ---
+	// Create a separate Direct3D device on iGPU for shader processing
+	// This is done once when swap chain is assigned, not every frame
+	//
+	// if (g_UseiGPUForShaders && !g_iGPUDevice) {
+	//     // Find iGPU by enumerating adapters and selecting integrated GPU
+	//     ComPtr<IDXGIFactory1> factory;
+	//     if (SUCCEEDED(CreateDXGIFactory1(IID_PPV_ARGS(&factory)))) {
+	//         for (UINT i = 0;; i++) {
+	//             ComPtr<IDXGIAdapter1> adapter;
+	//             if (FAILED(factory->EnumAdapters1(i, &adapter))) break;
+	//             
+	//             DXGI_ADAPTER_DESC1 desc;
+	//             if (SUCCEEDED(adapter->GetDesc1(&desc))) {
+	//                 // Check if this is an integrated GPU (usually has less dedicated memory)
+	//                 // Or use a configurable LUID/name to identify iGPU
+	//                 if ((desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) == 0 && 
+	//                     desc.DedicatedVideoMemory < 512 * 1024 * 1024) { // Less than 512MB = likely iGPU
+	//                     g_iGPULuid = desc.AdapterLuid;
+	//                     g_iGPUDevice = std::make_shared<Direct3DDevice>(g_iGPULuid);
+	//                     
+	//                     if (SUCCEEDED(g_iGPUDevice->Init())) {
+	//                         vddlog("i", "iGPU device created for shader processing");
+	//                         // Compile shaders on iGPU device here if needed
+	//                     } else {
+	//                         vddlog("e", "Failed to initialize iGPU device");
+	//                         g_iGPUDevice.reset();
+	//                     }
+	//                     break;
+	//                 }
+	//             }
+	//         }
+	//     }
+	// }
+	// --- END MULTI-GPU INITIALIZATION ---
+	
 	{
 		vddlog("d", "Creating a new swap-chain processing thread.");
 		m_ProcessingThread.reset(new SwapChainProcessor(SwapChain, Device, NewFrameEvent));

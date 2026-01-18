@@ -63,6 +63,15 @@ namespace Microsoft
             Microsoft::WRL::ComPtr<IDXGIAdapter1> Adapter;
             Microsoft::WRL::ComPtr<ID3D11Device> Device;
             Microsoft::WRL::ComPtr<ID3D11DeviceContext> DeviceContext;
+            
+            // --- SHADER SUPPORT MEMBERS ---
+            // Vertex and pixel shaders for frame processing
+            // These are created from loaded shader bytecode during Init()
+            // Microsoft::WRL::ComPtr<ID3D11VertexShader> VertexShader;
+            // Microsoft::WRL::ComPtr<ID3D11PixelShader> PixelShader;
+            // Optional: Constant buffers for shader parameters
+            // Microsoft::WRL::ComPtr<ID3D11Buffer> PerFrameBuffer;
+            // --- END SHADER SUPPORT MEMBERS ---
         };
 
         /// <summary>

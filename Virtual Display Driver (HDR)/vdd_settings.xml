@@ -77,6 +77,11 @@
         <EdidCeaOverride>false</EdidCeaOverride> <!-- Override CEA extension block -->
     </edid>
 
+    <!-- === SHADER RENDERING CONFIGURATION === -->
+    <shaders>
+        <shader_renderer>false</shader_renderer> <!-- Enable iGPU for shader processing (multi-GPU rendering) -->
+    </shaders>
+
     <!-- === EDID INTEGRATION SYSTEM === -->
     <edid_integration>
         <enabled>false</enabled>                                   <!-- DISABLED: Enable when you have monitor_profile.xml -->
