@@ -1,0 +1,38 @@
+diff --git a/Virtual Display Driver (HDR)/MttVDD/Driver.cpp b/Virtual Display Driver (HDR)/MttVDD/Driver.cpp
+index 7d3b2c1..b2d9a6f 100644
+--- a/Virtual Display Driver (HDR)/MttVDD/Driver.cpp
++++ b/Virtual Display Driver (HDR)/MttVDD/Driver.cpp
+@@ -113,6 +113,24 @@ IDDCX_BITS_PER_COMPONENT HDRCOLOUR = IDDCX_BITS_PER_COMPONENT_10;
+ 
+ wstring ColourFormat = L"RGB";
++
++// #--- // --- SHADER SUPPORT VARIABLES ---
++// #--- // Global shader bytecode storage
++// #--- std::vector<BYTE> g_VertexShaderBytecode;
++// #--- std::vector<BYTE> g_PixelShaderBytecode;
++// #--- wstring g_ShaderHeaderPath = L"";
++// #--- bool g_ShaderEnabled = false;
++// #---
++// #--- // --- MULTI-GPU SHADER RENDERING VARIABLES ---
++// #--- // Enable iGPU for shader processing while displaying on selected dGPU
++// #--- bool g_UseiGPUForShaders = false;  // Configurable via pipe/XML
++// #--- // LUID g_iGPULuid = {};  // iGPU LUID for shader processing
++// #--- // std::shared_ptr<Direct3DDevice> g_iGPUDevice = nullptr;  // iGPU Direct3DDevice for shaders
++// #--- // Microsoft::WRL::ComPtr<ID3D11Texture2D> g_StagingTexture = nullptr;  // Cross-adapter staging texture
++// #--- // Microsoft::WRL::ComPtr<ID3D11RenderTargetView> g_iGPURenderTarget = nullptr;  // iGPU render target for shader output
++// #--- // --- END MULTI-GPU SHADER RENDERING VARIABLES ---
++// #---
++// #--- // --- END SHADER SUPPORT VARIABLES ---
+ 
+ // === EDID INTEGRATION SETTINGS ===
+ bool edidIntegrationEnabled = false;
+@@ -193,6 +211,10 @@ std::map<std::wstring, std::pair<std::wstring, std::wstring>> SettingsQueryMap =
+ 	//Colour End
+ 	
++	// #--- //Shaders Begin
++	// #--- {L"ShaderRendererEnabled", {L"SHADERRENDERER", L"shader_renderer"}},
++	// #--- //Shaders End
++	
+ 	//EDID Integration Begin
+ 	{L"EdidIntegrationEnabled", {L"EDIDINTEGRATION", L"enabled"}},
+ 	{L"AutoConfigureFromEdid", {L"AUTOCONFIGFROMEDID", L"auto_configure_from_edid"}},
