@@ -1,0 +1,17 @@
+--- a/Virtual Display Driver (HDR)/MttVDD/Driver.h
++++ b/testcode/Driver.h
+@@ -63,6 +63,12 @@ namespace Microsoft
+             Microsoft::WRL::ComPtr<IDXGIFactory5> DxgiFactory;
+             Microsoft::WRL::ComPtr<IDXGIAdapter1> Adapter;
+             Microsoft::WRL::ComPtr<ID3D11Device> Device;
+             Microsoft::WRL::ComPtr<ID3D11DeviceContext> DeviceContext;
++            
++            // #--- SHADER SUPPORT: Vertex and pixel shaders for frame processing
++            // These are created from loaded shader bytecode during Init()
++            // Microsoft::WRL::ComPtr<ID3D11VertexShader> VertexShader;
++            // Microsoft::WRL::ComPtr<ID3D11PixelShader> PixelShader;
++            // Optional: Constant buffers for shader parameters
++            // Microsoft::WRL::ComPtr<ID3D11Buffer> PerFrameBuffer;
+         };
+ 
+         /// <summary>
