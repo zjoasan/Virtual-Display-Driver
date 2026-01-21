@@ -48,6 +48,7 @@ Environment:
 
 #pragma comment(lib, "xmllite.lib")
 #pragma comment(lib, "shlwapi.lib")
+// #--- #pragma comment(lib, "d3dcompiler.lib")
 
 HANDLE hPipeThread = NULL;
 bool g_Running = true;
@@ -131,7 +132,19 @@ wstring ColourFormat = L"RGB";
 // #--- // Microsoft::WRL::ComPtr<ID3D11RenderTargetView> g_iGPURenderTarget = nullptr;  // iGPU render target for shader output
 // #--- // --- END MULTI-GPU SHADER RENDERING VARIABLES ---
 // #---
-// #--- // --- END SHADER SUPPORT VARIABLES ---
+// #--- // --- SHADER RENDERING STATE ---
+// #--- // Global shader state for pipe command control
+// #--- std::vector<BYTE> g_LoadedVertexShaderBytecode;  // Vertex shader bytecode from pipe
+// #--- std::vector<BYTE> g_LoadedPixelShaderBytecode;   // Pixel shader bytecode from pipe
+// #--- bool g_ShaderEnabled = false;                   // Shader rendering toggle
+// #--- bool g_UseiGPUForShaders = false;                // iGPU shader target flag (from XML)
+// #--- LUID g_iGPULuid = {};                          // iGPU LUID detected at runtime
+// #--- std::shared_ptr<Direct3DDevice> g_iGPUDevice = nullptr;  // iGPU device instance
+// #--- // Shared texture handle for cross-GPU synchronization
+// #--- HANDLE g_SharedTextureHandle = nullptr;
+// #--- // Keyed mutex for GTX↔iGPU synchronization (key=0 released by dGPU)
+// #--- Microsoft::WRL::ComPtr<IDXGIKeyedMutex> g_SharedKeyedMutex;
+// #--- // --- END SHADER RENDERING STATE ---
 
 // === EDID INTEGRATION SETTINGS ===
 bool edidIntegrationEnabled = false;
@@ -217,6 +230,10 @@ std::map<std::wstring, std::pair<std::wstring, std::wstring>> SettingsQueryMap =
 // #---     //Shaders Begin
 // #---     {L"ShaderRendererEnabled", {L"SHADERRENDERER", L"shader_renderer"}},
 // #---     //Shaders End
+    
+// #---     //Shader Rendering Configuration
+// #---     {L"UseiGPUForShaders", {L"USEIGPUFORSHADERS", L"igpu-shader"}},
+// #---     //End Shader Rendering Configuration
     
     //EDID Integration Begin
     {L"EdidIntegrationEnabled", {L"EDIDINTEGRATION", L"enabled"}},
@@ -2271,6 +2288,76 @@ void HandleClient(HANDLE hPipe) {
             WriteFile(hPipe, settingsResponse.c_str(), bytesToWrite, &bytesWritten, NULL);
 
         }
+// #---         else if (wcsncmp(buffer, L"LOADSHADER", 10) == 0) {
+// #---             // Load shader bytecode from controller-app
+// #---             // Format: LOADSHADER [shader_name]
+// #---             // Controller-app will send bytecode in subsequent messages
+// #---             wchar_t* shaderName = buffer + 11;
+// #---             std::wstring shaderNameStr(shaderName);
+// #---             vddlog("i", ("Load shader requested: " + WStringToString(shaderNameStr)).c_str());
+// #---             // Send acknowledgment to prepare for bytecode transfer
+// #---             DWORD bytesWritten;
+// #---             std::wstring response = L"READY_FOR_SHADER";
+// #---             DWORD bytesToWrite = static_cast<DWORD>((response.length() + 1) * sizeof(wchar_t));
+// #---             WriteFile(hPipe, response.c_str(), bytesToWrite, &bytesWritten, NULL);
+// #---             
+// #---             // Read shader bytecode size
+// #---             DWORD bytesRead;
+// #---             UINT64 shaderSize = 0;
+// #---             if (ReadFile(hPipe, &shaderSize, sizeof(shaderSize), &bytesRead, NULL) && bytesRead == sizeof(shaderSize)) {
+// #---                 vddlog("d", ("Shader size: " + std::to_string(shaderSize) + " bytes").c_str());
+// #---                 
+// #---                 // Read shader bytecode
+// #---                 std::vector<BYTE> shaderBytecode(shaderSize);
+// #---                 if (ReadFile(hPipe, shaderBytecode.data(), static_cast<DWORD>(shaderSize), &bytesRead, NULL) && bytesRead == shaderSize) {
+// #---                     // Store shader bytecode (combine vertex and pixel for now, or separate if needed)
+// #---                     // For now, assume this is pixel shader (most common for post-processing)
+// #---                     g_LoadedPixelShaderBytecode = shaderBytecode;
+// #---                     vddlog("i", ("Shader loaded successfully: " + WStringToString(shaderNameStr)).c_str());
+// #---                     
+// #---                     // Send success response
+// #---                     response = L"SHADER_LOADED";
+// #---                     bytesToWrite = static_cast<DWORD>((response.length() + 1) * sizeof(wchar_t));
+// #---                     WriteFile(hPipe, response.c_str(), bytesToWrite, &bytesWritten, NULL);
+// #---                 } else {
+// #---                     vddlog("e", "Failed to read shader bytecode");
+// #---                     response = L"SHADER_LOAD_FAILED";
+// #---                     bytesToWrite = static_cast<DWORD>((response.length() + 1) * sizeof(wchar_t));
+// #---                     WriteFile(hPipe, response.c_str(), bytesToWrite, &bytesWritten, NULL);
+// #---                 }
+// #---             } else {
+// #---                 vddlog("e", "Failed to read shader size");
+// #---                 response = L"SHADER_LOAD_FAILED";
+// #---                 bytesToWrite = static_cast<DWORD>((response.length() + 1) * sizeof(wchar_t));
+// #---                 WriteFile(hPipe, response.c_str(), bytesToWrite, &bytesWritten, NULL);
+// #---             }
+// #---         }
+// #---         else if (wcsncmp(buffer, L"SHADER_ENABLE", 13) == 0) {
+// #---             // Enable shader rendering
+// #---             if (!g_LoadedPixelShaderBytecode.empty()) {
+// #---                 g_ShaderEnabled = true;
+// #---                 vddlog("i", "Shader rendering enabled");
+// #---                 DWORD bytesWritten;
+// #---                 std::wstring response = L"SHADER_ENABLED";
+// #---                 DWORD bytesToWrite = static_cast<DWORD>((response.length() + 1) * sizeof(wchar_t));
+// #---                 WriteFile(hPipe, response.c_str(), bytesToWrite, &bytesWritten, NULL);
+// #---             } else {
+// #---                 vddlog("w", "Cannot enable shader: No shader loaded");
+// #---                 DWORD bytesWritten;
+// #---                 std::wstring response = L"SHADER_NOT_LOADED";
+// #---                 DWORD bytesToWrite = static_cast<DWORD>((response.length() + 1) * sizeof(wchar_t));
+// #---                 WriteFile(hPipe, response.c_str(), bytesToWrite, &bytesWritten, NULL);
+// #---             }
+// #---         }
+// #---         else if (wcsncmp(buffer, L"SHADER_DISABLE", 14) == 0) {
+// #---             // Disable shader rendering
+// #---             g_ShaderEnabled = false;
+// #---             vddlog("i", "Shader rendering disabled");
+// #---             DWORD bytesWritten;
+// #---             std::wstring response = L"SHADER_DISABLED";
+// #---             DWORD bytesToWrite = static_cast<DWORD>((response.length() + 1) * sizeof(wchar_t));
+// #---             WriteFile(hPipe, response.c_str(), bytesToWrite, &bytesWritten, NULL);
+// #---         }
         else if (wcsncmp(buffer, L"PING", 4) == 0) {
             SendToPipe("PONG");
             vddlog("p", "Heartbeat Ping");
@@ -2532,6 +2619,21 @@ extern "C" NTSTATUS DriverEntry(
     manufacturerName = GetStringSetting(L"ManufacturerName");
     modelName = GetStringSetting(L"ModelName");
     serialNumber = GetStringSetting(L"SerialNumber");
+
+// #---     // === LOAD SHADER RENDERING SETTINGS ===
+// #---     g_UseiGPUForShaders = EnabledQuery(L"UseiGPUForShaders");
+// #---     // Detect iGPU if enabled
+// #---     if (g_UseiGPUForShaders) {
+// #---         auto iGPULuidOpt = findiGPU();
+// #---         if (iGPULuidOpt.has_value()) {
+// #---             g_iGPULuid = iGPULuidOpt.value();
+// #---             vddlog("i", "iGPU detected and enabled for shader rendering");
+// #---         } else {
+// #---             vddlog("w", "iGPU requested but not detected, falling back to dGPU");
+// #---             g_UseiGPUForShaders = false;
+// #---         }
+// #---     }
+// #---     // === END LOAD SHADER RENDERING SETTINGS ===
 
     xorCursorSupportLevelName = XorCursorSupportLevelToString(XorCursorSupportLevel);
 
@@ -3400,6 +3502,147 @@ void SwapChainProcessor::RunCore()
             //  * a GPU VPBlt to another surface
             //  * a GPU custom compute shader encode operation
             // ==============================
+            
+// #---             // --- SHADER RENDERING PIPELINE ---
+// #---             // If shader rendering is enabled and shader bytecode is loaded
+// #---             if (g_ShaderEnabled && !g_LoadedPixelShaderBytecode.empty()) {
+// #---                 // Determine which GPU should execute the shader based on XML setting
+// #---                 // If igpu-shader=true: iGPU executes shader rendering on shared texture
+// #---                 // If igpu-shader=false: dGPU executes shader rendering on shared texture
+// #---                 
+// #---                 // Get device that should execute the shader
+// #---                 std::shared_ptr<Direct3DDevice> shaderDevice = m_Device;  // Default: dGPU
+// #---                 if (g_UseiGPUForShaders && g_iGPUDevice) {
+// #---                     // iGPU should execute shader
+// #---                     shaderDevice = g_iGPUDevice;
+// #---                     vddlog("d", "Shader rendering on iGPU");
+// #---                 } else {
+// #---                     vddlog("d", "Shader rendering on dGPU");
+// #---                 }
+// #---                 
+// #---                 // Get surface description for creating shared texture
+// #---                 ComPtr<IDXGISurface> surface;
+// #---                 AcquiredBuffer.As(&surface);
+// #---                 DXGI_SURFACE_DESC surfaceDesc;
+// #---                 surface->GetDesc(&surfaceDesc);
+// #---                 
+// #---                 // Create or update shared texture if needed
+// #---                 if (!shaderDevice->SharedTexture || 
+// #---                     shaderDevice->SharedTexture->GetDesc().Width != surfaceDesc.Width ||
+// #---                     shaderDevice->SharedTexture->GetDesc().Height != surfaceDesc.Height) {
+// #---                     
+// #---                     D3D11_TEXTURE2D_DESC sharedDesc = {};
+// #---                     sharedDesc.Width = surfaceDesc.Width;
+// #---                     sharedDesc.Height = surfaceDesc.Height;
+// #---                     sharedDesc.MipLevels = 1;
+// #---                     sharedDesc.ArraySize = 1;
+// #---                     sharedDesc.Format = surfaceDesc.Format;
+// #---                     sharedDesc.SampleDesc.Count = 1;
+// #---                     sharedDesc.Usage = D3D11_USAGE_DEFAULT;
+// #---                     sharedDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
+// #---                     sharedDesc.CPUAccessFlags = 0;
+// #---                     sharedDesc.MiscFlags = D3D11_RESOURCE_MISC_SHARED | D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX;
+// #---                     
+// #---                     HRESULT hr = shaderDevice->Device->CreateTexture2D(&sharedDesc, nullptr, &shaderDevice->SharedTexture);
+// #---                     if (SUCCEEDED(hr)) {
+// #---                         // Get keyed mutex for synchronization
+// #---                         shaderDevice->SharedTexture.As(&shaderDevice->SharedKeyedMutex);
+// #---                         
+// #---                         // Create shader resource view for sampling
+// #---                         D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+// #---                         srvDesc.Format = surfaceDesc.Format;
+// #---                         srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+// #---                         srvDesc.Texture2D.MipLevels = 1;
+// #---                         shaderDevice->Device->CreateShaderResourceView(shaderDevice->SharedTexture.Get(), &srvDesc, &shaderDevice->ShaderResourceView);
+// #---                         
+// #---                         // Create render target view for output
+// #---                         D3D11_RENDER_TARGET_VIEW_DESC rtvDesc = {};
+// #---                         rtvDesc.Format = surfaceDesc.Format;
+// #---                         rtvDesc.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D;
+// #---                         rtvDesc.Texture2D.MipSlice = 0;
+// #---                         shaderDevice->Device->CreateRenderTargetView(shaderDevice->SharedTexture.Get(), &rtvDesc, &shaderDevice->RenderTargetView);
+// #---                         
+// #---                         // Create shaders if not already created
+// #---                         if (!shaderDevice->VertexShader) {
+// #---                             // Create default fullscreen quad vertex shader if not loaded
+// #---                             // For now, use simple pass-through vertex shader
+// #---                             const char* defaultVS = "cbuffer cb : register(b0) { float4 resolution; };\n"
+// #---                                 "float4 main(float4 pos : POSITION) : SV_POSITION { return pos; };\n";
+// #---                             ComPtr<ID3DBlob> vsBlob;
+// #---                             if (SUCCEEDED(D3DCompile(defaultVS, strlen(defaultVS), NULL, NULL, NULL, "main", "vs_5_0", 0, 0, &vsBlob, nullptr))) {
+// #---                                 shaderDevice->Device->CreateVertexShader(vsBlob->GetBufferPointer(), vsBlob->GetBufferSize(), nullptr, &shaderDevice->VertexShader);
+// #---                             }
+// #---                         }
+// #---                         
+// #---                         if (!shaderDevice->PixelShader && !g_LoadedPixelShaderBytecode.empty()) {
+// #---                             // Create pixel shader from loaded bytecode
+// #---                             shaderDevice->Device->CreatePixelShader(
+// #---                                 g_LoadedPixelShaderBytecode.data(),
+// #---                                 g_LoadedPixelShaderBytecode.size(),
+// #---                                 nullptr,
+// #---                                 &shaderDevice->PixelShader);
+// #---                             vddlog("i", "Pixel shader created from loaded bytecode");
+// #---                         }
+// #---                         
+// #---                         vddlog("d", "Shared texture and views created");
+// #---                     } else {
+// #---                         vddlog("w", "Failed to create shared texture, skipping shader rendering");
+// #---                         goto skip_shader_rendering;
+// #---                     }
+// #---                 }
+// #---                 
+// #---                 // Get source texture from swapchain
+// #---                 ComPtr<ID3D11Texture2D> sourceTexture;
+// #---                 AcquiredBuffer.As(&sourceTexture);
+// #---                 
+// #---                 // Copy swapchain surface to shared texture (dGPU → shared)
+// #---                 m_Device->DeviceContext->CopyResource(shaderDevice->SharedTexture.Get(), sourceTexture.Get());
+// #---                 
+// #---                 // Release keyed mutex so shader GPU can acquire it
+// #---                 if (shaderDevice->SharedKeyedMutex) {
+// #---                     shaderDevice->SharedKeyedMutex->ReleaseSync(0);
+// #---                     
+// #---                     // Acquire keyed mutex on shader GPU
+// #---                     if (SUCCEEDED(shaderDevice->SharedKeyedMutex->AcquireSync(0, INFINITE))) {
+// #---                         
+// #---                         // Set shader state and execute
+// #---                         if (shaderDevice->PixelShader && shaderDevice->ShaderResourceView && shaderDevice->RenderTargetView) {
+// #---                             ID3D11RenderTargetView* rtvs[] = { shaderDevice->RenderTargetView.Get() };
+// #---                             shaderDevice->DeviceContext->OMSetRenderTargets(1, rtvs, nullptr);
+// #---                             
+// #---                             // Set viewport
+// #---                             D3D11_VIEWPORT vp = {};
+// #---                             vp.Width = static_cast<float>(surfaceDesc.Width);
+// #---                             vp.Height = static_cast<float>(surfaceDesc.Height);
+// #---                             vp.MinDepth = 0.0f;
+// #---                             vp.MaxDepth = 1.0f;
+// #---                             shaderDevice->DeviceContext->RSSetViewports(1, &vp);
+// #---                             
+// #---                             // Set shaders
+// #---                             shaderDevice->DeviceContext->VSSetShader(shaderDevice->VertexShader.Get(), nullptr, 0);
+// #---                             shaderDevice->DeviceContext->PSSetShader(shaderDevice->PixelShader.Get(), nullptr, 0);
+// #---                             shaderDevice->DeviceContext->PSSetShaderResources(0, 1, shaderDevice->ShaderResourceView.GetAddressOf());
+// #---                             
+// #---                             // Draw fullscreen quad
+// #---                             shaderDevice->DeviceContext->Draw(4, 0);
+// #---                             
+// #---                             vddlog("d", "Shader applied to frame");
+// #---                         }
+// #---                         
+// #---                         // Release keyed mutex so VDD can capture result
+// #---                         shaderDevice->SharedKeyedMutex->ReleaseSync(1);
+// #---                     }
+// #---                     
+// #---                     // Copy shared texture back to swapchain (shared → dGPU)
+// #---                     if (shaderDevice != m_Device) {
+// #---                         // Shader was on iGPU, need to copy back to dGPU
+// #---                         m_Device->DeviceContext->CopyResource(sourceTexture.Get(), shaderDevice->SharedTexture.Get());
+// #---                     }
+// #---                 }
+// #---             }
+// #---             
+// #---         skip_shader_rendering:
+// #---             // --- END SHADER RENDERING PIPELINE ---
 
             AcquiredBuffer.Reset();
             //vddlog("d", "Reset buffer");
