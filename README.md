@@ -80,6 +80,37 @@ HDR Support Now Available for Windows 11 23H2+
 
 ![Powerpoint](https://github.com/user-attachments/assets/9ac05776-36e1-4ba1-ac52-3f189dbd7730)
 
+## Troubleshooting 
+### ⚠️ Important: GPU/Chipset Driver Updates
+
+VDD can conflict with major driver updates, causing display priority issues or black screens on boot.
+
+**Before Updating Drivers**
+
+If you're planning to update GPU or chipset drivers:
+1. Uninstall VDD first (via VDC app or Device Manager)
+2. Complete your driver update
+3. Reinstall VDD
+
+**If You're Stuck at Black Screen**
+
+*Boot into Safe Mode:*
+* Force shutdown 2-3 times until Windows Recovery appears
+* Choose: Troubleshoot → Advanced Options → Startup Settings → Restart → F4 (Safe Mode)
+
+*Remove VDD:*
+* Open Device Manager in Safe Mode
+* Expand Display Adapters → Uninstall Virtual Display Driver
+* Restart normally
+
+*Quick Fix Alternative:*
+* Press `Win + P` at black screen
+* Press ↓ arrow and Enter multiple times to cycle display modes
+
+**Why This Happens**
+
+During driver updates, Windows re-enumerates display devices and may prioritize the virtual display over your physical monitor. Since VDD has no physical screen attached, this results in a black screen even though Windows is running normally.
+
 ## 🤝 Sponsors
 
 <table>
