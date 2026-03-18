@@ -1,82 +1,67 @@
-# Virtual Display Driver Shaders
+# Virtual Display Driver Runtime Shaders
 
-This directory contains HLSL shaders for the Virtual Display Driver.
+The driver now loads runtime shaders from a shader directory instead of relying on generated C++ shader bytecode headers.
 
-## Shaders
+## Where the driver looks
 
-### Vortex Shader (`vortex_shader.hlsl`)
-- **Effect**: Split-screen with blue and red colored halves
-- **Left half**: Blue with 40% opacity
-- **Right half**: Red with 40% opacity
-- **Header**: `vortex_shader.h` (compiled bytecode)
+- `C:\VirtualDisplayDriver\Shaders` by default
+- `Shaders` next to `MttVDD.dll` as a fallback
+- The build also copies the sample `.hlsl` files from this folder into the packaged output folder
 
-### Wave Shader (`wave_shader.hlsl`)
-- **Effect**: Animated wave with horizontal bottom bar
-- **White bar**: 3 pixels tall at bottom of screen
-- **Wave**: Animated sine wave traveling side-to-side
-- **Parameters**: Wave amplitude controlled via PerFrameBuffer
-- **Header**: `wave_shader.h` (compiled bytecode)
+## Supported files
 
-## Compilation
+- `.hlsl` files compiled at runtime with `D3DCompileFromFile()`
+- `.cso` files loaded directly as precompiled pixel shaders
 
-To compile HLSL shaders on Windows using DirectX FX Compiler:
+## Required entry point
+
+- `PSMain`
+- If you prefer, compiled `.cso` shaders can skip source-level entry points entirely
+
+## Available shader bindings
+
+```hlsl
+cbuffer PerFrameBuffer : register(b0)
+{
+    float4 resolution;
+    float time;
+    float param0;
+};
+
+Texture2D InputTexture : register(t0);
+SamplerState InputSampler : register(s0);
+```
+
+- `resolution.xy` contains the current frame size
+- `time` is seconds since the driver process started
+- `param0` is the configurable runtime parameter from `shader_param0`
+- The built-in fullscreen vertex shader supplies `SV_POSITION` and `TEXCOORD0`
+
+## Driver settings
+
+Add or update these settings in `vdd_settings.xml`:
+
+```xml
+<shaders>
+    <shader_renderer>true</shader_renderer>
+    <shader_hot_reload>true</shader_hot_reload>
+    <shader_directory>Shaders</shader_directory>
+    <shader_file>wave_shader.hlsl</shader_file>
+    <shader_param0>1.0</shader_param0>
+</shaders>
+```
+
+## Included examples
+
+- `passthrough_shader.hlsl` keeps the source frame unchanged
+- `wave_shader.hlsl` overlays an animated wave and bottom bar on the source frame
+- `vortex_shader.hlsl` overlays a red/blue split tint on the source frame
+
+## Optional offline compilation
 
 ```cmd
-:: Vertex shaders
-fxc.exe /T vs_5_0 /E VSMain /Fo vortex_vs.cso vortex_shader.hlsl
-fxc.exe /T vs_5_0 /E VSMain /Fo wave_vs.cso wave_shader.hlsl
-
-:: Pixel shaders
-fxc.exe /T ps_5_0 /E PSMain /Fo vortex_ps.cso vortex_shader.hlsl
-fxc.exe /T ps_5_0 /E PSMain /Fo wave_ps.cso wave_shader.hlsl
+fxc.exe /T ps_5_0 /E PSMain /Fo wave_shader.cso wave_shader.hlsl
+fxc.exe /T ps_5_0 /E PSMain /Fo vortex_shader.cso vortex_shader.hlsl
 ```
 
-To convert compiled CSO files to hex arrays for headers, use a hex-to-c converter or manually convert the bytecode.
-
-## Usage
-
-Include the shader header in your C++ code:
-
-```cpp
-#include "Shaders/vortex_shader.h"  // or "Shaders/wave_shader.h"
-
-// Create shaders
-device->CreateVertexShader(VortexShader_VS, VortexShader_VS_size, nullptr, &vs);
-device->CreatePixelShader(VortexShader_PS, VortexShader_PS_size, nullptr, &ps);
-
-// Create and update constant buffer
-PerFrameBuffer cb;
-cb.resolution = DirectX::XMFLOAT4(width, height, 0, 0);
-cb.time = currentTime;
-cb.padding = 0.0f;  // vortex shader
-cb.amplitude = 1.0f; // wave shader
-```
-
-## PerFrameBuffer Structure
-
-### Vortex Shader
-```cpp
-struct PerFrameBuffer
-{
-    DirectX::XMFLOAT4 resolution;  // Screen resolution (width, height, 0, 0)
-    float time;                    // Time elapsed in seconds
-    float padding;                 // Padding for alignment
-};
-```
-
-### Wave Shader
-```cpp
-struct PerFrameBuffer
-{
-    DirectX::XMFLOAT4 resolution;  // Screen resolution (width, height, 0, 0)
-    float time;                    // Time elapsed in seconds
-    float amplitude;               // Wave amplitude control
-};
-```
-
-## Notes
-
-- Shaders use DirectX 11 Shader Model 5.0 (vs_5_0 / ps_5_0)
-- Constant buffer is bound to register b0
-- Fullscreen quad geometry is expected as input
-- PerFrameBuffer must be 16-byte aligned for DirectX constant buffer requirements
+Use `.hlsl` or `.cso` files for runtime shaders. The old generated `*.h` shader blobs have been removed.

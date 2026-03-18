@@ -48,12 +48,13 @@ Environment:
 
 #pragma comment(lib, "xmllite.lib")
 #pragma comment(lib, "shlwapi.lib")
-// #--- #pragma comment(lib, "d3dcompiler.lib")
+#pragma comment(lib, "d3dcompiler.lib")
 
 HANDLE hPipeThread = NULL;
 bool g_Running = true;
 mutex g_Mutex;
 HANDLE g_pipeHandle = INVALID_HANDLE_VALUE;
+HINSTANCE g_ModuleInstance = nullptr;
 
 using namespace std;
 using namespace Microsoft::IndirectDisp;
@@ -116,35 +117,12 @@ IDDCX_BITS_PER_COMPONENT HDRCOLOUR = IDDCX_BITS_PER_COMPONENT_10;
 
 wstring ColourFormat = L"RGB";
 
-// #--- // --- SHADER SUPPORT VARIABLES ---
-// #--- // Global shader bytecode storage
-// #--- std::vector<BYTE> g_VertexShaderBytecode;
-// #--- std::vector<BYTE> g_PixelShaderBytecode;
-// #--- wstring g_ShaderHeaderPath = L"";
-// #--- bool g_ShaderEnabled = false;
-// #---
-// #--- // --- MULTI-GPU SHADER RENDERING VARIABLES ---
-// #--- // Enable iGPU for shader processing while displaying on selected dGPU
-// #--- bool g_UseiGPUForShaders = false;  // Configurable via pipe/XML
-// #--- // LUID g_iGPULuid = {};  // iGPU LUID for shader processing
-// #--- // std::shared_ptr<Direct3DDevice> g_iGPUDevice = nullptr;  // iGPU Direct3DDevice for shaders
-// #--- // Microsoft::WRL::ComPtr<ID3D11Texture2D> g_StagingTexture = nullptr;  // Cross-adapter staging texture
-// #--- // Microsoft::WRL::ComPtr<ID3D11RenderTargetView> g_iGPURenderTarget = nullptr;  // iGPU render target for shader output
-// #--- // --- END MULTI-GPU SHADER RENDERING VARIABLES ---
-// #---
-// #--- // --- SHADER RENDERING STATE ---
-// #--- // Global shader state for pipe command control
-// #--- std::vector<BYTE> g_LoadedVertexShaderBytecode;  // Vertex shader bytecode from pipe
-// #--- std::vector<BYTE> g_LoadedPixelShaderBytecode;   // Pixel shader bytecode from pipe
-// #--- bool g_ShaderEnabled = false;                   // Shader rendering toggle
-// #--- bool g_UseiGPUForShaders = false;                // iGPU shader target flag (from XML)
-// #--- LUID g_iGPULuid = {};                          // iGPU LUID detected at runtime
-// #--- std::shared_ptr<Direct3DDevice> g_iGPUDevice = nullptr;  // iGPU device instance
-// #--- // Shared texture handle for cross-GPU synchronization
-// #--- HANDLE g_SharedTextureHandle = nullptr;
-// #--- // Keyed mutex for GTX↔iGPU synchronization (key=0 released by dGPU)
-// #--- Microsoft::WRL::ComPtr<IDXGIKeyedMutex> g_SharedKeyedMutex;
-// #--- // --- END SHADER RENDERING STATE ---
+bool shaderRendererEnabled = false;
+bool shaderHotReload = true;
+wstring shaderDirectory = L"Shaders";
+wstring shaderFile = L"";
+double shaderParam0 = 1.0;
+const auto g_ShaderStartTime = std::chrono::steady_clock::now();
 
 // === EDID INTEGRATION SETTINGS ===
 bool edidIntegrationEnabled = false;
@@ -227,13 +205,13 @@ std::map<std::wstring, std::pair<std::wstring, std::wstring>> SettingsQueryMap =
     {L"ColourFormat", {L"COLOURFORMAT", L"ColourFormat"}},
     //Colour End
     
-// #---     //Shaders Begin
-// #---     {L"ShaderRendererEnabled", {L"SHADERRENDERER", L"shader_renderer"}},
-// #---     //Shaders End
-    
-// #---     //Shader Rendering Configuration
-// #---     {L"UseiGPUForShaders", {L"USEIGPUFORSHADERS", L"igpu-shader"}},
-// #---     //End Shader Rendering Configuration
+    //Shaders Begin
+    {L"ShaderRendererEnabled", {L"SHADERRENDERER", L"shader_renderer"}},
+    {L"ShaderHotReload", {L"SHADERHOTRELOAD", L"shader_hot_reload"}},
+    {L"ShaderDirectory", {L"SHADERDIRECTORY", L"shader_directory"}},
+    {L"ShaderFile", {L"SHADERFILE", L"shader_file"}},
+    {L"ShaderParam0", {L"SHADERPARAM0", L"shader_param0"}},
+    //Shaders End
     
     //EDID Integration Begin
     {L"EdidIntegrationEnabled", {L"EDIDINTEGRATION", L"enabled"}},
@@ -695,6 +673,607 @@ double GetDoubleSetting(const std::wstring& settingKey) {
     }
 
     return xmlLoggingValue;
+}
+
+namespace
+{
+    struct ShaderConstantBufferData
+    {
+        float resolution[4];
+        float time;
+        float param0;
+        float param1;
+        float param2;
+    };
+
+    DXGI_FORMAT GetShaderViewFormat(DXGI_FORMAT resourceFormat)
+    {
+        switch (resourceFormat)
+        {
+        case DXGI_FORMAT_B8G8R8A8_TYPELESS:
+            return DXGI_FORMAT_B8G8R8A8_UNORM;
+        case DXGI_FORMAT_R8G8B8A8_TYPELESS:
+            return DXGI_FORMAT_R8G8B8A8_UNORM;
+        case DXGI_FORMAT_R16G16B16A16_TYPELESS:
+            return DXGI_FORMAT_R16G16B16A16_FLOAT;
+        default:
+            return resourceFormat;
+        }
+    }
+
+    bool IsSupportedShaderExtension(const wchar_t* extension)
+    {
+        return extension != nullptr &&
+            (_wcsicmp(extension, L".hlsl") == 0 || _wcsicmp(extension, L".cso") == 0);
+    }
+
+    ULONGLONG ToUint64(const FILETIME& fileTime)
+    {
+        ULARGE_INTEGER value = {};
+        value.HighPart = fileTime.dwHighDateTime;
+        value.LowPart = fileTime.dwLowDateTime;
+        return value.QuadPart;
+    }
+
+    ULONGLONG QueryFileTimestamp(const std::wstring& path)
+    {
+        WIN32_FILE_ATTRIBUTE_DATA fileData = {};
+        if (!GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &fileData))
+        {
+            return 0;
+        }
+
+        return ToUint64(fileData.ftLastWriteTime);
+    }
+
+    std::wstring CombinePath(const std::wstring& basePath, const std::wstring& childPath)
+    {
+        wchar_t combinedPath[MAX_PATH] = {};
+        if (!PathCombineW(combinedPath, basePath.c_str(), childPath.c_str()))
+        {
+            return L"";
+        }
+
+        return combinedPath;
+    }
+
+    std::wstring GetModuleDirectory()
+    {
+        if (g_ModuleInstance == nullptr)
+        {
+            return L"";
+        }
+
+        wchar_t modulePath[MAX_PATH] = {};
+        DWORD result = GetModuleFileNameW(g_ModuleInstance, modulePath, ARRAYSIZE(modulePath));
+        if (result == 0 || result >= ARRAYSIZE(modulePath))
+        {
+            return L"";
+        }
+
+        if (!PathRemoveFileSpecW(modulePath))
+        {
+            return L"";
+        }
+
+        return modulePath;
+    }
+
+    std::vector<std::wstring> GetShaderSearchDirectories()
+    {
+        std::vector<std::wstring> directories;
+        std::wstring effectiveShaderDirectory = shaderDirectory.empty() ? L"Shaders" : shaderDirectory;
+
+        if (effectiveShaderDirectory.empty())
+        {
+            return directories;
+        }
+
+        if (PathIsRelativeW(effectiveShaderDirectory.c_str()))
+        {
+            std::wstring configShaderDirectory = CombinePath(confpath, effectiveShaderDirectory);
+            if (!configShaderDirectory.empty())
+            {
+                directories.push_back(configShaderDirectory);
+            }
+
+            std::wstring moduleDirectory = GetModuleDirectory();
+            if (!moduleDirectory.empty())
+            {
+                std::wstring moduleShaderDirectory = CombinePath(moduleDirectory, effectiveShaderDirectory);
+                if (!moduleShaderDirectory.empty() &&
+                    std::find(directories.begin(), directories.end(), moduleShaderDirectory) == directories.end())
+                {
+                    directories.push_back(moduleShaderDirectory);
+                }
+            }
+        }
+        else
+        {
+            directories.push_back(effectiveShaderDirectory);
+        }
+
+        return directories;
+    }
+
+    std::vector<std::wstring> EnumerateShaderFiles(const std::wstring& directory)
+    {
+        std::vector<std::wstring> shaderFiles;
+        if (directory.empty())
+        {
+            return shaderFiles;
+        }
+
+        std::wstring searchPattern = CombinePath(directory, L"*");
+        if (searchPattern.empty())
+        {
+            return shaderFiles;
+        }
+
+        WIN32_FIND_DATAW findData = {};
+        HANDLE findHandle = FindFirstFileW(searchPattern.c_str(), &findData);
+        if (findHandle == INVALID_HANDLE_VALUE)
+        {
+            return shaderFiles;
+        }
+
+        do
+        {
+            if ((findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0)
+            {
+                continue;
+            }
+
+            const wchar_t* extension = PathFindExtensionW(findData.cFileName);
+            if (IsSupportedShaderExtension(extension))
+            {
+                std::wstring shaderPath = CombinePath(directory, findData.cFileName);
+                if (!shaderPath.empty())
+                {
+                    shaderFiles.push_back(shaderPath);
+                }
+            }
+        } while (FindNextFileW(findHandle, &findData));
+
+        FindClose(findHandle);
+        std::sort(shaderFiles.begin(), shaderFiles.end());
+        return shaderFiles;
+    }
+
+    bool ResolveShaderPath(std::wstring& resolvedPath)
+    {
+        resolvedPath.clear();
+
+        if (!shaderFile.empty())
+        {
+            if (!PathIsRelativeW(shaderFile.c_str()) && PathFileExistsW(shaderFile.c_str()))
+            {
+                resolvedPath = shaderFile;
+                return true;
+            }
+
+            for (const auto& directory : GetShaderSearchDirectories())
+            {
+                std::wstring candidatePath = CombinePath(directory, shaderFile);
+                if (!candidatePath.empty() && PathFileExistsW(candidatePath.c_str()))
+                {
+                    resolvedPath = candidatePath;
+                    return true;
+                }
+            }
+        }
+
+        for (const auto& directory : GetShaderSearchDirectories())
+        {
+            std::vector<std::wstring> files = EnumerateShaderFiles(directory);
+            if (!files.empty())
+            {
+                resolvedPath = files.front();
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    bool ReadBinaryFile(const std::wstring& path, std::vector<BYTE>& data)
+    {
+        std::ifstream file(path, std::ios::binary | std::ios::ate);
+        if (!file)
+        {
+            return false;
+        }
+
+        std::streamsize size = file.tellg();
+        file.seekg(0, std::ios::beg);
+        if (size <= 0)
+        {
+            data.clear();
+            return false;
+        }
+
+        data.resize(static_cast<size_t>(size));
+        return file.read(reinterpret_cast<char*>(data.data()), size).good();
+    }
+
+    HRESULT EnsureShaderStaticResources(Direct3DDevice& device)
+    {
+        if (device.ShaderVertexShader && device.ShaderSamplerState && device.ShaderConstantBuffer)
+        {
+            return S_OK;
+        }
+
+        static const char* fullscreenTriangleShader = R"(
+struct VSOutput
+{
+    float4 position : SV_POSITION;
+    float2 texcoord : TEXCOORD0;
+};
+
+VSOutput VSMain(uint vertexId : SV_VertexID)
+{
+    float2 positions[3] =
+    {
+        float2(-1.0f, -1.0f),
+        float2(-1.0f,  3.0f),
+        float2( 3.0f, -1.0f)
+    };
+
+    float2 texcoords[3] =
+    {
+        float2(0.0f, 1.0f),
+        float2(0.0f, -1.0f),
+        float2(2.0f, 1.0f)
+    };
+
+    VSOutput output;
+    output.position = float4(positions[vertexId], 0.0f, 1.0f);
+    output.texcoord = texcoords[vertexId];
+    return output;
+}
+)";
+
+        if (!device.ShaderVertexShader)
+        {
+            ComPtr<ID3DBlob> vertexShaderBlob;
+            ComPtr<ID3DBlob> errorBlob;
+            HRESULT hr = D3DCompile(
+                fullscreenTriangleShader,
+                strlen(fullscreenTriangleShader),
+                nullptr,
+                nullptr,
+                nullptr,
+                "VSMain",
+                "vs_5_0",
+                D3DCOMPILE_ENABLE_STRICTNESS,
+                0,
+                &vertexShaderBlob,
+                &errorBlob);
+
+            if (FAILED(hr))
+            {
+                if (errorBlob)
+                {
+                    vddlog("e", static_cast<const char*>(errorBlob->GetBufferPointer()));
+                }
+                return hr;
+            }
+
+            hr = device.Device->CreateVertexShader(
+                vertexShaderBlob->GetBufferPointer(),
+                vertexShaderBlob->GetBufferSize(),
+                nullptr,
+                &device.ShaderVertexShader);
+
+            if (FAILED(hr))
+            {
+                return hr;
+            }
+        }
+
+        if (!device.ShaderSamplerState)
+        {
+            D3D11_SAMPLER_DESC samplerDesc = {};
+            samplerDesc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+            samplerDesc.AddressU = D3D11_TEXTURE_ADDRESS_CLAMP;
+            samplerDesc.AddressV = D3D11_TEXTURE_ADDRESS_CLAMP;
+            samplerDesc.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
+            samplerDesc.MaxLOD = D3D11_FLOAT32_MAX;
+
+            HRESULT hr = device.Device->CreateSamplerState(&samplerDesc, &device.ShaderSamplerState);
+            if (FAILED(hr))
+            {
+                return hr;
+            }
+        }
+
+        if (!device.ShaderConstantBuffer)
+        {
+            D3D11_BUFFER_DESC bufferDesc = {};
+            bufferDesc.ByteWidth = sizeof(ShaderConstantBufferData);
+            bufferDesc.Usage = D3D11_USAGE_DEFAULT;
+            bufferDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+
+            HRESULT hr = device.Device->CreateBuffer(&bufferDesc, nullptr, &device.ShaderConstantBuffer);
+            if (FAILED(hr))
+            {
+                return hr;
+            }
+        }
+
+        return S_OK;
+    }
+
+    HRESULT LoadPixelShaderFromDisk(Direct3DDevice& device, const std::wstring& shaderPath)
+    {
+        if (shaderPath.empty())
+        {
+            return E_INVALIDARG;
+        }
+
+        const wchar_t* extension = PathFindExtensionW(shaderPath.c_str());
+        ComPtr<ID3D11PixelShader> pixelShader;
+        HRESULT hr = E_FAIL;
+
+        if (extension != nullptr && _wcsicmp(extension, L".cso") == 0)
+        {
+            std::vector<BYTE> shaderBytecode;
+            if (!ReadBinaryFile(shaderPath, shaderBytecode) || shaderBytecode.empty())
+            {
+                return HRESULT_FROM_WIN32(ERROR_READ_FAULT);
+            }
+
+            hr = device.Device->CreatePixelShader(
+                shaderBytecode.data(),
+                shaderBytecode.size(),
+                nullptr,
+                &pixelShader);
+        }
+        else
+        {
+            const char* entryPoints[] = { "PSMain", "main" };
+            for (const char* entryPoint : entryPoints)
+            {
+                ComPtr<ID3DBlob> shaderBlob;
+                ComPtr<ID3DBlob> errorBlob;
+
+                hr = D3DCompileFromFile(
+                    shaderPath.c_str(),
+                    nullptr,
+                    D3D_COMPILE_STANDARD_FILE_INCLUDE,
+                    entryPoint,
+                    "ps_5_0",
+                    D3DCOMPILE_ENABLE_STRICTNESS,
+                    0,
+                    &shaderBlob,
+                    &errorBlob);
+
+                if (SUCCEEDED(hr))
+                {
+                    hr = device.Device->CreatePixelShader(
+                        shaderBlob->GetBufferPointer(),
+                        shaderBlob->GetBufferSize(),
+                        nullptr,
+                        &pixelShader);
+                    if (SUCCEEDED(hr))
+                    {
+                        break;
+                    }
+                }
+                else if (errorBlob)
+                {
+                    vddlog("e", static_cast<const char*>(errorBlob->GetBufferPointer()));
+                }
+            }
+        }
+
+        if (FAILED(hr))
+        {
+            return hr;
+        }
+
+        device.ShaderPixelShader = pixelShader;
+        device.LoadedShaderPath = shaderPath;
+        device.LoadedShaderTimestamp = QueryFileTimestamp(shaderPath);
+
+        std::string logMessage = "Loaded runtime shader: " + WStringToString(shaderPath);
+        vddlog("i", logMessage.c_str());
+        return S_OK;
+    }
+
+    HRESULT EnsureShaderTextures(Direct3DDevice& device, const D3D11_TEXTURE2D_DESC& sourceDesc)
+    {
+        if (device.ShaderInputTexture &&
+            device.ShaderOutputTexture &&
+            device.ShaderTextureWidth == sourceDesc.Width &&
+            device.ShaderTextureHeight == sourceDesc.Height &&
+            device.ShaderTextureFormat == sourceDesc.Format)
+        {
+            return S_OK;
+        }
+
+        DXGI_FORMAT shaderViewFormat = GetShaderViewFormat(sourceDesc.Format);
+        if (shaderViewFormat == DXGI_FORMAT_UNKNOWN)
+        {
+            return E_INVALIDARG;
+        }
+
+        device.ShaderInputTexture.Reset();
+        device.ShaderInputView.Reset();
+        device.ShaderOutputTexture.Reset();
+        device.ShaderOutputView.Reset();
+
+        D3D11_TEXTURE2D_DESC inputDesc = sourceDesc;
+        inputDesc.MipLevels = 1;
+        inputDesc.ArraySize = 1;
+        inputDesc.SampleDesc.Count = 1;
+        inputDesc.SampleDesc.Quality = 0;
+        inputDesc.Usage = D3D11_USAGE_DEFAULT;
+        inputDesc.CPUAccessFlags = 0;
+        inputDesc.MiscFlags = 0;
+        inputDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+
+        HRESULT hr = device.Device->CreateTexture2D(&inputDesc, nullptr, &device.ShaderInputTexture);
+        if (FAILED(hr))
+        {
+            return hr;
+        }
+
+        D3D11_SHADER_RESOURCE_VIEW_DESC shaderResourceViewDesc = {};
+        shaderResourceViewDesc.Format = shaderViewFormat;
+        shaderResourceViewDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+        shaderResourceViewDesc.Texture2D.MostDetailedMip = 0;
+        shaderResourceViewDesc.Texture2D.MipLevels = 1;
+
+        hr = device.Device->CreateShaderResourceView(
+            device.ShaderInputTexture.Get(),
+            &shaderResourceViewDesc,
+            &device.ShaderInputView);
+        if (FAILED(hr))
+        {
+            return hr;
+        }
+
+        D3D11_TEXTURE2D_DESC outputDesc = inputDesc;
+        outputDesc.BindFlags = D3D11_BIND_RENDER_TARGET;
+
+        hr = device.Device->CreateTexture2D(&outputDesc, nullptr, &device.ShaderOutputTexture);
+        if (FAILED(hr))
+        {
+            return hr;
+        }
+
+        D3D11_RENDER_TARGET_VIEW_DESC renderTargetViewDesc = {};
+        renderTargetViewDesc.Format = shaderViewFormat;
+        renderTargetViewDesc.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D;
+        renderTargetViewDesc.Texture2D.MipSlice = 0;
+
+        hr = device.Device->CreateRenderTargetView(
+            device.ShaderOutputTexture.Get(),
+            &renderTargetViewDesc,
+            &device.ShaderOutputView);
+        if (FAILED(hr))
+        {
+            return hr;
+        }
+
+        device.ShaderTextureWidth = sourceDesc.Width;
+        device.ShaderTextureHeight = sourceDesc.Height;
+        device.ShaderTextureFormat = sourceDesc.Format;
+        return S_OK;
+    }
+
+    HRESULT EnsureShaderPipelineReady(Direct3DDevice& device, const D3D11_TEXTURE2D_DESC& sourceDesc)
+    {
+        if (!shaderRendererEnabled)
+        {
+            return S_FALSE;
+        }
+
+        HRESULT hr = EnsureShaderStaticResources(device);
+        if (FAILED(hr))
+        {
+            return hr;
+        }
+
+        std::wstring resolvedShaderPath;
+        bool foundShader = ResolveShaderPath(resolvedShaderPath);
+
+        if (!foundShader)
+        {
+            if (!device.ShaderPixelShader)
+            {
+                ULONGLONG now = GetTickCount64();
+                if (now - device.LastShaderLoadAttemptTick > 2000)
+                {
+                    device.LastShaderLoadAttemptTick = now;
+                    vddlog("w", "Shader renderer enabled but no .hlsl or .cso file was found in the shader directory.");
+                }
+                return HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND);
+            }
+        }
+        else
+        {
+            ULONGLONG shaderTimestamp = QueryFileTimestamp(resolvedShaderPath);
+            bool needsReload =
+                !device.ShaderPixelShader ||
+                _wcsicmp(device.LoadedShaderPath.c_str(), resolvedShaderPath.c_str()) != 0 ||
+                (shaderHotReload && shaderTimestamp != 0 && shaderTimestamp != device.LoadedShaderTimestamp);
+
+            if (needsReload)
+            {
+                hr = LoadPixelShaderFromDisk(device, resolvedShaderPath);
+                if (FAILED(hr))
+                {
+                    std::string logMessage = "Failed to load shader: " + WStringToString(resolvedShaderPath);
+                    vddlog("e", logMessage.c_str());
+
+                    if (!device.ShaderPixelShader)
+                    {
+                        return hr;
+                    }
+                }
+            }
+        }
+
+        return EnsureShaderTextures(device, sourceDesc);
+    }
+
+    HRESULT ApplyConfiguredShader(Direct3DDevice& device, ID3D11Texture2D* sourceTexture)
+    {
+        if (!shaderRendererEnabled || sourceTexture == nullptr)
+        {
+            return S_FALSE;
+        }
+
+        D3D11_TEXTURE2D_DESC sourceDesc = {};
+        sourceTexture->GetDesc(&sourceDesc);
+
+        HRESULT hr = EnsureShaderPipelineReady(device, sourceDesc);
+        if (FAILED(hr))
+        {
+            return hr;
+        }
+
+        device.DeviceContext->CopyResource(device.ShaderInputTexture.Get(), sourceTexture);
+
+        ShaderConstantBufferData shaderData = {};
+        shaderData.resolution[0] = static_cast<float>(sourceDesc.Width);
+        shaderData.resolution[1] = static_cast<float>(sourceDesc.Height);
+        shaderData.time = std::chrono::duration<float>(std::chrono::steady_clock::now() - g_ShaderStartTime).count();
+        shaderData.param0 = static_cast<float>(shaderParam0);
+
+        device.DeviceContext->UpdateSubresource(device.ShaderConstantBuffer.Get(), 0, nullptr, &shaderData, 0, 0);
+
+        D3D11_VIEWPORT viewport = {};
+        viewport.TopLeftX = 0.0f;
+        viewport.TopLeftY = 0.0f;
+        viewport.Width = static_cast<float>(sourceDesc.Width);
+        viewport.Height = static_cast<float>(sourceDesc.Height);
+        viewport.MinDepth = 0.0f;
+        viewport.MaxDepth = 1.0f;
+
+        ID3D11RenderTargetView* renderTargets[] = { device.ShaderOutputView.Get() };
+        ID3D11Buffer* constantBuffers[] = { device.ShaderConstantBuffer.Get() };
+        ID3D11SamplerState* samplers[] = { device.ShaderSamplerState.Get() };
+        ID3D11ShaderResourceView* shaderResources[] = { device.ShaderInputView.Get() };
+        ID3D11ShaderResourceView* nullShaderResources[] = { nullptr };
+
+        device.DeviceContext->OMSetRenderTargets(1, renderTargets, nullptr);
+        device.DeviceContext->RSSetViewports(1, &viewport);
+        device.DeviceContext->IASetInputLayout(nullptr);
+        device.DeviceContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+        device.DeviceContext->VSSetShader(device.ShaderVertexShader.Get(), nullptr, 0);
+        device.DeviceContext->PSSetShader(device.ShaderPixelShader.Get(), nullptr, 0);
+        device.DeviceContext->PSSetConstantBuffers(0, 1, constantBuffers);
+        device.DeviceContext->PSSetSamplers(0, 1, samplers);
+        device.DeviceContext->PSSetShaderResources(0, 1, shaderResources);
+        device.DeviceContext->Draw(3, 0);
+        device.DeviceContext->PSSetShaderResources(0, 1, nullShaderResources);
+
+        device.DeviceContext->CopyResource(sourceTexture, device.ShaderOutputTexture.Get());
+        return S_OK;
+    }
 }
 
 // === EDID PROFILE LOADING FUNCTION ===
@@ -1677,9 +2256,12 @@ extern "C" BOOL WINAPI DllMain(
     _In_ UINT dwReason,
     _In_opt_ LPVOID lpReserved)
 {
-    UNREFERENCED_PARAMETER(hInstance);
     UNREFERENCED_PARAMETER(lpReserved);
-    UNREFERENCED_PARAMETER(dwReason);
+
+    if (dwReason == DLL_PROCESS_ATTACH)
+    {
+        g_ModuleInstance = hInstance;
+    }
 
     return TRUE;
 }
@@ -2288,76 +2870,6 @@ void HandleClient(HANDLE hPipe) {
             WriteFile(hPipe, settingsResponse.c_str(), bytesToWrite, &bytesWritten, NULL);
 
         }
-// #---         else if (wcsncmp(buffer, L"LOADSHADER", 10) == 0) {
-// #---             // Load shader bytecode from controller-app
-// #---             // Format: LOADSHADER [shader_name]
-// #---             // Controller-app will send bytecode in subsequent messages
-// #---             wchar_t* shaderName = buffer + 11;
-// #---             std::wstring shaderNameStr(shaderName);
-// #---             vddlog("i", ("Load shader requested: " + WStringToString(shaderNameStr)).c_str());
-// #---             // Send acknowledgment to prepare for bytecode transfer
-// #---             DWORD bytesWritten;
-// #---             std::wstring response = L"READY_FOR_SHADER";
-// #---             DWORD bytesToWrite = static_cast<DWORD>((response.length() + 1) * sizeof(wchar_t));
-// #---             WriteFile(hPipe, response.c_str(), bytesToWrite, &bytesWritten, NULL);
-// #---             
-// #---             // Read shader bytecode size
-// #---             DWORD bytesRead;
-// #---             UINT64 shaderSize = 0;
-// #---             if (ReadFile(hPipe, &shaderSize, sizeof(shaderSize), &bytesRead, NULL) && bytesRead == sizeof(shaderSize)) {
-// #---                 vddlog("d", ("Shader size: " + std::to_string(shaderSize) + " bytes").c_str());
-// #---                 
-// #---                 // Read shader bytecode
-// #---                 std::vector<BYTE> shaderBytecode(shaderSize);
-// #---                 if (ReadFile(hPipe, shaderBytecode.data(), static_cast<DWORD>(shaderSize), &bytesRead, NULL) && bytesRead == shaderSize) {
-// #---                     // Store shader bytecode (combine vertex and pixel for now, or separate if needed)
-// #---                     // For now, assume this is pixel shader (most common for post-processing)
-// #---                     g_LoadedPixelShaderBytecode = shaderBytecode;
-// #---                     vddlog("i", ("Shader loaded successfully: " + WStringToString(shaderNameStr)).c_str());
-// #---                     
-// #---                     // Send success response
-// #---                     response = L"SHADER_LOADED";
-// #---                     bytesToWrite = static_cast<DWORD>((response.length() + 1) * sizeof(wchar_t));
-// #---                     WriteFile(hPipe, response.c_str(), bytesToWrite, &bytesWritten, NULL);
-// #---                 } else {
-// #---                     vddlog("e", "Failed to read shader bytecode");
-// #---                     response = L"SHADER_LOAD_FAILED";
-// #---                     bytesToWrite = static_cast<DWORD>((response.length() + 1) * sizeof(wchar_t));
-// #---                     WriteFile(hPipe, response.c_str(), bytesToWrite, &bytesWritten, NULL);
-// #---                 }
-// #---             } else {
-// #---                 vddlog("e", "Failed to read shader size");
-// #---                 response = L"SHADER_LOAD_FAILED";
-// #---                 bytesToWrite = static_cast<DWORD>((response.length() + 1) * sizeof(wchar_t));
-// #---                 WriteFile(hPipe, response.c_str(), bytesToWrite, &bytesWritten, NULL);
-// #---             }
-// #---         }
-// #---         else if (wcsncmp(buffer, L"SHADER_ENABLE", 13) == 0) {
-// #---             // Enable shader rendering
-// #---             if (!g_LoadedPixelShaderBytecode.empty()) {
-// #---                 g_ShaderEnabled = true;
-// #---                 vddlog("i", "Shader rendering enabled");
-// #---                 DWORD bytesWritten;
-// #---                 std::wstring response = L"SHADER_ENABLED";
-// #---                 DWORD bytesToWrite = static_cast<DWORD>((response.length() + 1) * sizeof(wchar_t));
-// #---                 WriteFile(hPipe, response.c_str(), bytesToWrite, &bytesWritten, NULL);
-// #---             } else {
-// #---                 vddlog("w", "Cannot enable shader: No shader loaded");
-// #---                 DWORD bytesWritten;
-// #---                 std::wstring response = L"SHADER_NOT_LOADED";
-// #---                 DWORD bytesToWrite = static_cast<DWORD>((response.length() + 1) * sizeof(wchar_t));
-// #---                 WriteFile(hPipe, response.c_str(), bytesToWrite, &bytesWritten, NULL);
-// #---             }
-// #---         }
-// #---         else if (wcsncmp(buffer, L"SHADER_DISABLE", 14) == 0) {
-// #---             // Disable shader rendering
-// #---             g_ShaderEnabled = false;
-// #---             vddlog("i", "Shader rendering disabled");
-// #---             DWORD bytesWritten;
-// #---             std::wstring response = L"SHADER_DISABLED";
-// #---             DWORD bytesToWrite = static_cast<DWORD>((response.length() + 1) * sizeof(wchar_t));
-// #---             WriteFile(hPipe, response.c_str(), bytesToWrite, &bytesWritten, NULL);
-// #---         }
         else if (wcsncmp(buffer, L"PING", 4) == 0) {
             SendToPipe("PONG");
             vddlog("p", "Heartbeat Ping");
@@ -2541,6 +3053,23 @@ extern "C" NTSTATUS DriverEntry(
     SDRCOLOUR = SDR10 ? IDDCX_BITS_PER_COMPONENT_10 : IDDCX_BITS_PER_COMPONENT_8;
     ColourFormat = GetStringSetting(L"ColourFormat");
 
+    //Shaders
+    shaderRendererEnabled = EnabledQuery(L"ShaderRendererEnabled");
+    shaderHotReload = EnabledQuery(L"ShaderHotReload");
+    shaderDirectory = GetStringSetting(L"ShaderDirectory");
+    if (shaderDirectory.empty()) {
+        shaderDirectory = L"Shaders";
+    }
+    shaderFile = GetStringSetting(L"ShaderFile");
+    shaderParam0 = GetDoubleSetting(L"ShaderParam0");
+
+    if (shaderRendererEnabled && PathIsRelativeW(shaderDirectory.c_str())) {
+        std::wstring shaderRoot = CombinePath(confpath, shaderDirectory);
+        if (!shaderRoot.empty() && !CreateDirectoryW(shaderRoot.c_str(), nullptr) && GetLastError() != ERROR_ALREADY_EXISTS) {
+            vddlog("w", "Failed to create configured shader directory.");
+        }
+    }
+
     //Cursor
     hardwareCursor = EnabledQuery(L"HardwareCursorEnabled");
     alphaCursorSupport = EnabledQuery(L"AlphaCursorSupport");
@@ -2619,21 +3148,6 @@ extern "C" NTSTATUS DriverEntry(
     manufacturerName = GetStringSetting(L"ManufacturerName");
     modelName = GetStringSetting(L"ModelName");
     serialNumber = GetStringSetting(L"SerialNumber");
-
-// #---     // === LOAD SHADER RENDERING SETTINGS ===
-// #---     g_UseiGPUForShaders = EnabledQuery(L"UseiGPUForShaders");
-// #---     // Detect iGPU if enabled
-// #---     if (g_UseiGPUForShaders) {
-// #---         auto iGPULuidOpt = findiGPU();
-// #---         if (iGPULuidOpt.has_value()) {
-// #---             g_iGPULuid = iGPULuidOpt.value();
-// #---             vddlog("i", "iGPU detected and enabled for shader rendering");
-// #---         } else {
-// #---             vddlog("w", "iGPU requested but not detected, falling back to dGPU");
-// #---             g_UseiGPUForShaders = false;
-// #---         }
-// #---     }
-// #---     // === END LOAD SHADER RENDERING SETTINGS ===
 
     xorCursorSupportLevelName = XorCursorSupportLevelToString(XorCursorSupportLevel);
 
@@ -3492,157 +4006,19 @@ void SwapChainProcessor::RunCore()
             
             AcquiredBuffer.Attach(pSurface);
 
-            // ==============================
-            // TODO: Process the frame here
-            //
-            // This is the most performance-critical section of code in an IddCx driver. It's important that whatever
-            // is done with the acquired surface be finished as quickly as possible. This operation could be:
-            //  * a GPU copy to another buffer surface for later processing (such as a staging surface for mapping to CPU memory)
-            //  * a GPU encode operation
-            //  * a GPU VPBlt to another surface
-            //  * a GPU custom compute shader encode operation
-            // ==============================
-            
-// #---             // --- SHADER RENDERING PIPELINE ---
-// #---             // If shader rendering is enabled and shader bytecode is loaded
-// #---             if (g_ShaderEnabled && !g_LoadedPixelShaderBytecode.empty()) {
-// #---                 // Determine which GPU should execute the shader based on XML setting
-// #---                 // If igpu-shader=true: iGPU executes shader rendering on shared texture
-// #---                 // If igpu-shader=false: dGPU executes shader rendering on shared texture
-// #---                 
-// #---                 // Get device that should execute the shader
-// #---                 std::shared_ptr<Direct3DDevice> shaderDevice = m_Device;  // Default: dGPU
-// #---                 if (g_UseiGPUForShaders && g_iGPUDevice) {
-// #---                     // iGPU should execute shader
-// #---                     shaderDevice = g_iGPUDevice;
-// #---                     vddlog("d", "Shader rendering on iGPU");
-// #---                 } else {
-// #---                     vddlog("d", "Shader rendering on dGPU");
-// #---                 }
-// #---                 
-// #---                 // Get surface description for creating shared texture
-// #---                 ComPtr<IDXGISurface> surface;
-// #---                 AcquiredBuffer.As(&surface);
-// #---                 DXGI_SURFACE_DESC surfaceDesc;
-// #---                 surface->GetDesc(&surfaceDesc);
-// #---                 
-// #---                 // Create or update shared texture if needed
-// #---                 if (!shaderDevice->SharedTexture || 
-// #---                     shaderDevice->SharedTexture->GetDesc().Width != surfaceDesc.Width ||
-// #---                     shaderDevice->SharedTexture->GetDesc().Height != surfaceDesc.Height) {
-// #---                     
-// #---                     D3D11_TEXTURE2D_DESC sharedDesc = {};
-// #---                     sharedDesc.Width = surfaceDesc.Width;
-// #---                     sharedDesc.Height = surfaceDesc.Height;
-// #---                     sharedDesc.MipLevels = 1;
-// #---                     sharedDesc.ArraySize = 1;
-// #---                     sharedDesc.Format = surfaceDesc.Format;
-// #---                     sharedDesc.SampleDesc.Count = 1;
-// #---                     sharedDesc.Usage = D3D11_USAGE_DEFAULT;
-// #---                     sharedDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
-// #---                     sharedDesc.CPUAccessFlags = 0;
-// #---                     sharedDesc.MiscFlags = D3D11_RESOURCE_MISC_SHARED | D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX;
-// #---                     
-// #---                     HRESULT hr = shaderDevice->Device->CreateTexture2D(&sharedDesc, nullptr, &shaderDevice->SharedTexture);
-// #---                     if (SUCCEEDED(hr)) {
-// #---                         // Get keyed mutex for synchronization
-// #---                         shaderDevice->SharedTexture.As(&shaderDevice->SharedKeyedMutex);
-// #---                         
-// #---                         // Create shader resource view for sampling
-// #---                         D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-// #---                         srvDesc.Format = surfaceDesc.Format;
-// #---                         srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-// #---                         srvDesc.Texture2D.MipLevels = 1;
-// #---                         shaderDevice->Device->CreateShaderResourceView(shaderDevice->SharedTexture.Get(), &srvDesc, &shaderDevice->ShaderResourceView);
-// #---                         
-// #---                         // Create render target view for output
-// #---                         D3D11_RENDER_TARGET_VIEW_DESC rtvDesc = {};
-// #---                         rtvDesc.Format = surfaceDesc.Format;
-// #---                         rtvDesc.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D;
-// #---                         rtvDesc.Texture2D.MipSlice = 0;
-// #---                         shaderDevice->Device->CreateRenderTargetView(shaderDevice->SharedTexture.Get(), &rtvDesc, &shaderDevice->RenderTargetView);
-// #---                         
-// #---                         // Create shaders if not already created
-// #---                         if (!shaderDevice->VertexShader) {
-// #---                             // Create default fullscreen quad vertex shader if not loaded
-// #---                             // For now, use simple pass-through vertex shader
-// #---                             const char* defaultVS = "cbuffer cb : register(b0) { float4 resolution; };\n"
-// #---                                 "float4 main(float4 pos : POSITION) : SV_POSITION { return pos; };\n";
-// #---                             ComPtr<ID3DBlob> vsBlob;
-// #---                             if (SUCCEEDED(D3DCompile(defaultVS, strlen(defaultVS), NULL, NULL, NULL, "main", "vs_5_0", 0, 0, &vsBlob, nullptr))) {
-// #---                                 shaderDevice->Device->CreateVertexShader(vsBlob->GetBufferPointer(), vsBlob->GetBufferSize(), nullptr, &shaderDevice->VertexShader);
-// #---                             }
-// #---                         }
-// #---                         
-// #---                         if (!shaderDevice->PixelShader && !g_LoadedPixelShaderBytecode.empty()) {
-// #---                             // Create pixel shader from loaded bytecode
-// #---                             shaderDevice->Device->CreatePixelShader(
-// #---                                 g_LoadedPixelShaderBytecode.data(),
-// #---                                 g_LoadedPixelShaderBytecode.size(),
-// #---                                 nullptr,
-// #---                                 &shaderDevice->PixelShader);
-// #---                             vddlog("i", "Pixel shader created from loaded bytecode");
-// #---                         }
-// #---                         
-// #---                         vddlog("d", "Shared texture and views created");
-// #---                     } else {
-// #---                         vddlog("w", "Failed to create shared texture, skipping shader rendering");
-// #---                         goto skip_shader_rendering;
-// #---                     }
-// #---                 }
-// #---                 
-// #---                 // Get source texture from swapchain
-// #---                 ComPtr<ID3D11Texture2D> sourceTexture;
-// #---                 AcquiredBuffer.As(&sourceTexture);
-// #---                 
-// #---                 // Copy swapchain surface to shared texture (dGPU → shared)
-// #---                 m_Device->DeviceContext->CopyResource(shaderDevice->SharedTexture.Get(), sourceTexture.Get());
-// #---                 
-// #---                 // Release keyed mutex so shader GPU can acquire it
-// #---                 if (shaderDevice->SharedKeyedMutex) {
-// #---                     shaderDevice->SharedKeyedMutex->ReleaseSync(0);
-// #---                     
-// #---                     // Acquire keyed mutex on shader GPU
-// #---                     if (SUCCEEDED(shaderDevice->SharedKeyedMutex->AcquireSync(0, INFINITE))) {
-// #---                         
-// #---                         // Set shader state and execute
-// #---                         if (shaderDevice->PixelShader && shaderDevice->ShaderResourceView && shaderDevice->RenderTargetView) {
-// #---                             ID3D11RenderTargetView* rtvs[] = { shaderDevice->RenderTargetView.Get() };
-// #---                             shaderDevice->DeviceContext->OMSetRenderTargets(1, rtvs, nullptr);
-// #---                             
-// #---                             // Set viewport
-// #---                             D3D11_VIEWPORT vp = {};
-// #---                             vp.Width = static_cast<float>(surfaceDesc.Width);
-// #---                             vp.Height = static_cast<float>(surfaceDesc.Height);
-// #---                             vp.MinDepth = 0.0f;
-// #---                             vp.MaxDepth = 1.0f;
-// #---                             shaderDevice->DeviceContext->RSSetViewports(1, &vp);
-// #---                             
-// #---                             // Set shaders
-// #---                             shaderDevice->DeviceContext->VSSetShader(shaderDevice->VertexShader.Get(), nullptr, 0);
-// #---                             shaderDevice->DeviceContext->PSSetShader(shaderDevice->PixelShader.Get(), nullptr, 0);
-// #---                             shaderDevice->DeviceContext->PSSetShaderResources(0, 1, shaderDevice->ShaderResourceView.GetAddressOf());
-// #---                             
-// #---                             // Draw fullscreen quad
-// #---                             shaderDevice->DeviceContext->Draw(4, 0);
-// #---                             
-// #---                             vddlog("d", "Shader applied to frame");
-// #---                         }
-// #---                         
-// #---                         // Release keyed mutex so VDD can capture result
-// #---                         shaderDevice->SharedKeyedMutex->ReleaseSync(1);
-// #---                     }
-// #---                     
-// #---                     // Copy shared texture back to swapchain (shared → dGPU)
-// #---                     if (shaderDevice != m_Device) {
-// #---                         // Shader was on iGPU, need to copy back to dGPU
-// #---                         m_Device->DeviceContext->CopyResource(sourceTexture.Get(), shaderDevice->SharedTexture.Get());
-// #---                     }
-// #---                 }
-// #---             }
-// #---             
-// #---         skip_shader_rendering:
-// #---             // --- END SHADER RENDERING PIPELINE ---
+            ComPtr<ID3D11Texture2D> sourceTexture;
+            HRESULT textureHr = AcquiredBuffer.As(&sourceTexture);
+            if (SUCCEEDED(textureHr))
+            {
+                HRESULT shaderHr = ApplyConfiguredShader(*m_Device, sourceTexture.Get());
+                if (FAILED(shaderHr) &&
+                    shaderHr != HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND))
+                {
+                    logStream.str("");
+                    logStream << "Shader processing failed. HRESULT: " << shaderHr;
+                    vddlog("w", logStream.str().c_str());
+                }
+            }
 
             AcquiredBuffer.Reset();
             //vddlog("d", "Reset buffer");

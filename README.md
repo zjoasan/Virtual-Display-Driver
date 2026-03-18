@@ -23,11 +23,14 @@ Unlike traditional monitors, this virtual display supports custom resolutions an
 ## ⬇️ Download Latest Version
 
 - [Driver Installer (Windows 10/11)](https://github.com/VirtualDrivers/Virtual-Display-Driver/releases) - Check the [Releases](https://github.com/VirtualDrivers/Virtual-Display-Driver/releases) page for the latest version and release notes.
+- **Winget:** `winget install --id=VirtualDrivers.Virtual-Display-Driver -e`
 
 > [!IMPORTANT]
 > Before using the Virtual Display Driver, ensure the following dependencies are installed:
 > - **Microsoft Visual C++ Redistributable**  
 >   If you encounter the error `vcruntime140.dll not found`, download and install the latest version from the [Microsoft Visual C++ Redistributable page](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist?view=msvc-170).
+>
+> **Driver update safety:** If you're about to install major GPU or chipset driver updates, uninstall VDD first. If you get a black screen or display priority gets scrambled, boot into Safe Mode and uninstall VDD to recover.
 
 
 ## 🛠️ Installation
@@ -77,6 +80,37 @@ HDR Support Now Available for Windows 11 23H2+
 
 ![Powerpoint](https://github.com/user-attachments/assets/9ac05776-36e1-4ba1-ac52-3f189dbd7730)
 
+## Troubleshooting
+### ⚠️ Important: GPU/Chipset Driver Updates
+
+VDD can conflict with major driver updates, causing display priority issues or black screens on boot.
+
+**Before Updating Drivers**
+
+If you're planning to update GPU or chipset drivers:
+1. Uninstall VDD first (via VDC app or Device Manager)
+2. Complete your driver update
+3. Reinstall VDD
+
+**If You're Stuck at Black Screen**
+
+*Boot into Safe Mode:*
+* Force shutdown 2-3 times until Windows Recovery appears
+* Choose: Troubleshoot → Advanced Options → Startup Settings → Restart → F4 (Safe Mode)
+
+*Remove VDD:*
+* Open Device Manager in Safe Mode
+* Expand Display Adapters → Uninstall Virtual Display Driver
+* Restart normally
+
+*Quick Fix Alternative:*
+* Press `Win + P` at black screen
+* Press ↓ arrow and Enter multiple times to cycle display modes
+
+**Why This Happens**
+
+During driver updates, Windows re-enumerates display devices and may prioritize the virtual display over your physical monitor. Since VDD has no physical screen attached, this results in a black screen even though Windows is running normally.
+
 ## 🤝 Sponsors
 
 <table>
@@ -94,6 +128,7 @@ HDR Support Now Available for Windows 11 23H2+
 
 ## Acknowledgements
 
+- Special thanks to **[@ye4241](https://github.com/ye4241)** for submitting the package to Microsoft (WinGet).
 - Shoutout to **[MikeTheTech](https://github.com/itsmikethetech)** Project Manager, Owner, and Programmer
 - Shoutout to **[zjoasan](https://github.com/zjoasan)** Programmer. For scripts, EDID integration, and parts of installer.
 - Shoutout to **[Bud](https://github.com/bud3699)** Former Lead Programmer, has since left the project.

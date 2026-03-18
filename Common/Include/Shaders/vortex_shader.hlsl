@@ -8,6 +8,9 @@ cbuffer PerFrameBuffer : register(b0)
     float padding;
 };
 
+Texture2D InputTexture : register(t0);
+SamplerState InputSampler : register(s0);
+
 struct VS_INPUT
 {
     float4 position : POSITION;
@@ -33,19 +36,20 @@ PS_INPUT VSMain(VS_INPUT input)
 float4 PSMain(PS_INPUT input) : SV_Target
 {
     float2 uv = input.texcoord;
+    float4 sceneColor = InputTexture.Sample(InputSampler, uv);
 
     // Split screen at center (0.5)
-    float4 color;
+    float4 overlayColor;
     if (uv.x < 0.5)
     {
         // Left half - Blue with 40% opacity
-        color = float4(0.0, 0.0, 1.0, 0.4);
+        overlayColor = float4(0.0, 0.0, 1.0, 0.4);
     }
     else
     {
         // Right half - Red with 40% opacity
-        color = float4(1.0, 0.0, 0.0, 0.4);
+        overlayColor = float4(1.0, 0.0, 0.0, 0.4);
     }
 
-    return color;
+    return float4(lerp(sceneColor.rgb, overlayColor.rgb, overlayColor.a), 1.0);
 };

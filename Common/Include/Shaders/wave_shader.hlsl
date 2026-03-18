@@ -8,6 +8,9 @@ cbuffer PerFrameBuffer : register(b0)
     float amplitude;
 };
 
+Texture2D InputTexture : register(t0);
+SamplerState InputSampler : register(s0);
+
 struct VS_INPUT
 {
     float4 position : POSITION;
@@ -45,12 +48,12 @@ float4 PSMain(PS_INPUT input) : SV_Target
     float barHeight = 3.0;
     float barStart = screenHeight - barHeight;
 
-    float4 finalColor = float4(0.0, 0.0, 0.0, 1.0); // Black background
+    float4 finalColor = InputTexture.Sample(InputSampler, uv);
 
     // Draw bottom bar
     if (pixelPos.y >= barStart)
     {
-        finalColor = float4(1.0, 1.0, 1.0, 1.0); // White
+        finalColor = lerp(finalColor, float4(1.0, 1.0, 1.0, 1.0), 0.85);
     }
     else
     {
@@ -74,7 +77,7 @@ float4 PSMain(PS_INPUT input) : SV_Target
         // If pixel is within wave thickness, make it white
         if (distanceFromWave < waveThickness)
         {
-            finalColor = float4(1.0, 1.0, 1.0, 1.0); // White wave
+            finalColor = lerp(finalColor, float4(1.0, 1.0, 1.0, 1.0), 0.85);
         }
     }
 
